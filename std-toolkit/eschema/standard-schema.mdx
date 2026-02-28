@@ -1,0 +1,476 @@
+---
+title: Standard Schema v1 Support
+description: Use ESchema with form libraries and validators that support Standard Schema
+---
+
+## What is Standard Schema?
+
+[Standard Schema](https://github.com/standard-schema/standard-schema) is a specification that provides a unified interface for validation libraries. It allows different schema libraries (Zod, Valibot, ArkType, etc.) to work with the same validation API.
+
+ESchema implements the Standard Schema v1 specification, making it compatible with any tool that supports this standard.
+
+## The ~standard Property
+
+Every ESchema instance exposes a `~standard` property:
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema } from "effect";
+
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+  age: Schema.Number,
+}).build();
+
+const standard = UserSchema["~standard"];
+
+console.log(standard.version);  // 1
+console.log(standard.vendor);   // "@std-toolkit/eschema"
+```
+
+<ResponseField name="version" type="number" required>
+  Standard Schema version (always `1`)
+</ResponseField>
+
+<ResponseField name="vendor" type="string" required>
+  Implementation identifier (`"@std-toolkit/eschema"`)
+</ResponseField>
+
+<ResponseField name="validate" type="function" required>
+  Synchronous validation function
+</ResponseField>
+
+<ResponseField name="types" type="object">
+  TypeScript type information for input/output
+</ResponseField>
+
+## Validation API
+
+The `validate` function provides synchronous validation:
+
+```typescript
+const result = UserSchema["~standard"].validate({
+  userId: "user-1",
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30,
+});
+
+if ("value" in result) {
+  // Success
+  console.log(result.value);
+  // { userId: "user-1", name: "Alice", email: "alice@example.com", age: 30 }
+} else {
+  // Failure
+  console.log(result.issues);
+  // [{ message: "..." }]
+}
+```
+
+### Success Result
+
+```typescript
+type SuccessResult<T> = {
+  value: T;
+};
+```
+
+### Failure Result
+
+```typescript
+type FailureResult = {
+  issues: Array<{ message: string }>;
+};
+```
+
+## Usage with Form Libraries
+
+### React Hook Form
+
+Use ESchema with React Hook Form's resolver:
+
+```typescript
+import { useForm } from "react-hook-form";
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema } from "effect";
+
+const SignupSchema = ESchema.make("Signup", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+  password: Schema.String,
+}).build();
+
+function SignupForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: (data) => {
+      const result = SignupSchema["~standard"].validate(data);
+      
+      if ("value" in result) {
+        return { values: result.value, errors: {} };
+      }
+      
+      return {
+        values: {},
+        errors: result.issues.reduce((acc, issue) => {
+          acc["root"] = { message: issue.message };
+          return acc;
+        }, {} as Record<string, { message: string }>),
+      };
+    },
+  });
+
+  const onSubmit = (data: any) => {
+    console.log(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register("name")} />
+      <input {...register("email")} type="email" />
+      <input {...register("password")} type="password" />
+      {errors.root && <span>{errors.root.message}</span>}
+      <button type="submit">Sign Up</button>
+    </form>
+  );
+}
+```
+
+### Custom Validation
+
+Use the Standard Schema API directly:
+
+```typescript
+function validateUser(data: unknown) {
+  const result = UserSchema["~standard"].validate(data);
+  
+  if ("value" in result) {
+    return { success: true, data: result.value };
+  }
+  
+  return {
+    success: false,
+    errors: result.issues.map(issue => issue.message),
+  };
+}
+
+const validation = validateUser({
+  userId: "user-1",
+  name: "Alice",
+  email: "invalid-email",
+  age: "not a number",
+});
+
+if (!validation.success) {
+  console.error("Validation failed:", validation.errors);
+}
+```
+
+## Schema Evolution Support
+
+Standard Schema validation works with evolved schemas:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .build();
+
+// Validate v1 data (automatically migrates to v2)
+const v1Result = UserSchema["~standard"].validate({
+  _v: "v1",
+  userId: "user-1",
+  name: "Alice",
+});
+
+console.log(v1Result);
+// {
+//   value: {
+//     userId: "user-1",
+//     name: "Alice",
+//     email: "unknown@example.com"
+//   }
+// }
+
+// Validate v2 data
+const v2Result = UserSchema["~standard"].validate({
+  _v: "v2",
+  userId: "user-2",
+  name: "Bob",
+  email: "bob@example.com",
+});
+
+console.log(v2Result);
+// {
+//   value: {
+//     userId: "user-2",
+//     name: "Bob",
+//     email: "bob@example.com"
+//   }
+// }
+```
+
+## Type Inference
+
+The `types` property provides TypeScript type information:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+type UserInput = typeof UserSchema["~standard"]["types"]["input"];
+// { userId: string; name: string; email: string }
+
+type UserOutput = typeof UserSchema["~standard"]["types"]["output"];
+// { userId: string; name: string; email: string }
+```
+
+<Note>
+  For ESchema, input and output types are the same (no transformations at the Standard Schema level).
+</Note>
+
+## Error Handling
+
+### Validation Errors
+
+```typescript
+const result = UserSchema["~standard"].validate({
+  userId: "user-1",
+  name: 123,  // Wrong type
+});
+
+if ("issues" in result) {
+  result.issues.forEach(issue => {
+    console.error(issue.message);
+  });
+}
+```
+
+### Unknown Version Errors
+
+```typescript
+const result = UserSchema["~standard"].validate({
+  _v: "v99",  // Unknown version
+  userId: "user-1",
+  name: "Alice",
+});
+
+// {
+//   issues: [{ message: "Unknown schema version: v99" }]
+// }
+```
+
+### Missing Required Fields
+
+```typescript
+const result = UserSchema["~standard"].validate({
+  userId: "user-1",
+  // Missing required fields
+});
+
+// {
+//   issues: [{ message: "..." }]
+// }
+```
+
+## Comparison with Effect Schema
+
+### Effect Schema (Asynchronous)
+
+```typescript
+import { Effect } from "effect";
+
+const program = Effect.gen(function* () {
+  const user = yield* UserSchema.decode(data);
+  return user;
+});
+
+Effect.runPromise(program);
+```
+
+**Use when:**
+- You need async validation
+- You're using Effect throughout your app
+- You want composable error handling
+
+### Standard Schema (Synchronous)
+
+```typescript
+const result = UserSchema["~standard"].validate(data);
+
+if ("value" in result) {
+  console.log(result.value);
+}
+```
+
+**Use when:**
+- You need synchronous validation
+- You're integrating with form libraries
+- You want simple success/failure checks
+
+## Complete Example
+
+### Login Form with Standard Schema
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema } from "effect";
+
+// Define schema
+const LoginSchema = ESchema.make("Login", "sessionId", {
+  email: Schema.String,
+  password: Schema.String,
+}).build();
+
+// Form validation
+function validateLogin(formData: FormData) {
+  const data = {
+    sessionId: crypto.randomUUID(),
+    email: formData.get("email"),
+    password: formData.get("password"),
+  };
+  
+  const result = LoginSchema["~standard"].validate(data);
+  
+  if ("value" in result) {
+    return { success: true, data: result.value };
+  }
+  
+  return {
+    success: false,
+    errors: result.issues.map(issue => issue.message),
+  };
+}
+
+// Usage in a form handler
+function handleSubmit(event: SubmitEvent) {
+  event.preventDefault();
+  
+  const formData = new FormData(event.target as HTMLFormElement);
+  const validation = validateLogin(formData);
+  
+  if (validation.success) {
+    // Process login
+    console.log("Login successful:", validation.data);
+  } else {
+    // Show errors
+    console.error("Login failed:", validation.errors);
+  }
+}
+```
+
+### API Validation
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema } from "effect";
+
+const CreatePostSchema = ESchema.make("CreatePost", "postId", {
+  title: Schema.String,
+  content: Schema.String,
+  tags: Schema.Array(Schema.String),
+}).build();
+
+// Express.js route handler
+app.post("/api/posts", (req, res) => {
+  const result = CreatePostSchema["~standard"].validate({
+    postId: crypto.randomUUID(),
+    ...req.body,
+  });
+  
+  if ("value" in result) {
+    // Save post
+    const post = result.value;
+    res.json({ success: true, post });
+  } else {
+    // Return validation errors
+    res.status(400).json({
+      success: false,
+      errors: result.issues.map(issue => issue.message),
+    });
+  }
+});
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Effect Schema for business logic">
+    Standard Schema is for validation only. Use Effect Schema for complex operations:
+
+    ```typescript
+    // Form validation: Use Standard Schema
+    const formResult = schema["~standard"].validate(formData);
+
+    // Business logic: Use Effect Schema
+    const program = Effect.gen(function* () {
+      const user = yield* schema.decode(data);
+      const saved = yield* Users.insert(user);
+      return saved;
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Handle validation errors gracefully">
+    Always check for issues before using the value:
+
+    ```typescript
+    const result = schema["~standard"].validate(data);
+
+    if ("value" in result) {
+      // Use result.value
+    } else {
+      // Handle result.issues
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Don't rely on synchronous migrations for complex logic">
+    Standard Schema runs migrations synchronously. Avoid async operations:
+
+    ```typescript
+    // ❌ Avoid: Async migration
+    .evolve("v2", { profilePic: Schema.String }, async (prev) => ({
+      ...prev,
+      profilePic: await fetchDefaultAvatar(),  // Won't work
+    }))
+
+    // ✅ OK: Sync migration
+    .evolve("v2", { profilePic: Schema.String }, (prev) => ({
+      ...prev,
+      profilePic: "default.png",
+    }))
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Limitations
+
+<Warning>
+  **Synchronous only** - The Standard Schema API is synchronous. For async validation, use Effect Schema directly.
+</Warning>
+
+<Warning>
+  **Basic error information** - Issues only include messages, not detailed error paths like Effect Schema.
+</Warning>
+
+<Warning>
+  **No streaming validation** - Standard Schema validates the entire value at once.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="book" href="/std-toolkit/eschema/api-reference">
+    Explore all ESchema methods
+  </Card>
+  <Card title="db-sqlite Overview" icon="database" href="/std-toolkit/db-sqlite/overview">
+    Use ESchema with databases
+  </Card>
+</CardGroup>

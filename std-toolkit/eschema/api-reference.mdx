@@ -1,0 +1,532 @@
+---
+title: ESchema API Reference
+description: Complete reference for ESchema methods and types
+---
+
+## ESchema.make()
+
+Create a new ESchema with initial v1 fields.
+
+```typescript
+static make<N, Id, I>(
+  name: N,
+  idField: Id,
+  schema: I
+): Builder<N, Id, "v1", I & Record<Id, IdSchema>>
+```
+
+<ParamField path="name" type="string" required>
+  Entity type name (e.g., "User", "Post")
+</ParamField>
+
+<ParamField path="idField" type="string" required>
+  Name of the ID field (e.g., "userId", "postId")
+</ParamField>
+
+<ParamField path="schema" type="object" required>
+  Schema field definitions (cannot include the ID field or fields starting with `_`)
+</ParamField>
+
+**Returns:** `Builder` instance for chaining `.evolve()` or `.build()`
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+});
+```
+
+---
+
+## .evolve()
+
+Add a new schema version with migration logic.
+
+```typescript
+evolve<V, D>(
+  version: V,
+  delta: D,
+  migration: (prev: PrevType) => NextType
+): Builder<N, Id, V, MergedSchema>
+```
+
+<ParamField path="version" type="string" required>
+  Version identifier (e.g., "v2", "v3")
+</ParamField>
+
+<ParamField path="delta" type="object" required>
+  Fields to add, modify, or remove. Use `null` to remove a field.
+</ParamField>
+
+<ParamField path="migration" type="function" required>
+  Function to transform data from previous version to this version
+</ParamField>
+
+**Returns:** `Builder` instance for chaining more `.evolve()` calls or `.build()`
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .evolve(
+    "v3",
+    { name: null, fullName: Schema.String },
+    (prev) => ({
+      userId: prev.userId,
+      email: prev.email,
+      fullName: prev.name,
+    })
+  );
+```
+
+---
+
+## .build()
+
+Finalize the schema and return an `ESchema` instance.
+
+```typescript
+build(): ESchema<N, Id, V, F>
+```
+
+**Returns:** `ESchema` instance with all configured versions
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+}).build();
+```
+
+---
+
+## schema.encode()
+
+Encode a value and add version metadata.
+
+```typescript
+encode(value: T): Effect<T & { _v: string }, ESchemaError>
+```
+
+<ParamField path="value" type="object" required>
+  The value to encode (must match the latest schema)
+</ParamField>
+
+**Returns:** `Effect` that succeeds with the encoded value including `_v`
+
+**Errors:** `ESchemaError` if validation fails
+
+### Example
+
+```typescript
+const program = Effect.gen(function* () {
+  const encoded = yield* UserSchema.encode({
+    userId: "user-1",
+    name: "Alice",
+  });
+  
+  console.log(encoded);
+  // { _v: "v1", userId: "user-1", name: "Alice" }
+});
+```
+
+---
+
+## schema.decode()
+
+Decode a value and run migrations if needed.
+
+```typescript
+decode(value: unknown): Effect<T, ESchemaError>
+```
+
+<ParamField path="value" type="unknown" required>
+  The value to decode (can be any version)
+</ParamField>
+
+**Returns:** `Effect` that succeeds with the decoded value at the latest version
+
+**Errors:** `ESchemaError` if validation or migration fails
+
+### Example
+
+```typescript
+const program = Effect.gen(function* () {
+  // Decode v1 data (migrates to latest)
+  const user = yield* UserSchema.decode({
+    _v: "v1",
+    userId: "user-1",
+    name: "Alice",
+  });
+  
+  console.log(user);
+  // { userId: "user-1", name: "Alice", email: "unknown@example.com" }
+});
+```
+
+---
+
+## schema.makePartial()
+
+Create a partial value with version metadata (for updates).
+
+```typescript
+makePartial(value: Partial<T>): Partial<T> & { _v: string }
+```
+
+<ParamField path="value" type="object" required>
+  Partial entity with fields to update
+</ParamField>
+
+**Returns:** Partial value with `_v` field added
+
+### Example
+
+```typescript
+const updates = UserSchema.makePartial({
+  name: "Bob",
+});
+
+console.log(updates);
+// { _v: "v1", name: "Bob" }
+```
+
+---
+
+## schema.fields
+
+Access the raw field definitions for the latest schema version.
+
+```typescript
+get fields(): F
+```
+
+**Returns:** Object containing all field schemas (including the ID field)
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+const fields = UserSchema.fields;
+// { name: Schema.String, email: Schema.String, userId: Schema.String }
+```
+
+---
+
+## schema.schema
+
+Get the Effect Schema struct for the latest version.
+
+```typescript
+get schema(): Schema.Struct<F>
+```
+
+**Returns:** `Schema.Struct` instance
+
+### Example
+
+```typescript
+const effectSchema = UserSchema.schema;
+// Schema.Struct({ userId: Schema.String, name: Schema.String, email: Schema.String })
+```
+
+---
+
+## schema.getDescriptor()
+
+Get a JSON Schema descriptor for the latest version.
+
+```typescript
+getDescriptor(): ESchemaDescriptor
+```
+
+**Returns:** JSON Schema object with version literal
+
+### Example
+
+```typescript
+const descriptor = UserSchema.getDescriptor();
+
+console.log(descriptor);
+// {
+//   type: "object",
+//   properties: {
+//     userId: { type: "string" },
+//     name: { type: "string" },
+//     email: { type: "string" },
+//     _v: { enum: ["v1"] }
+//   },
+//   required: ["userId", "name", "email", "_v"]
+// }
+```
+
+---
+
+## schema.name
+
+The entity type name.
+
+```typescript
+readonly name: string
+```
+
+### Example
+
+```typescript
+console.log(UserSchema.name);  // "User"
+```
+
+---
+
+## schema.idField
+
+The ID field name.
+
+```typescript
+readonly idField: string
+```
+
+### Example
+
+```typescript
+console.log(UserSchema.idField);  // "userId"
+```
+
+---
+
+## schema.latestVersion
+
+The latest schema version.
+
+```typescript
+readonly latestVersion: string
+```
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", { name: Schema.String })
+  .evolve("v2", { email: Schema.String }, (prev) => ({ ...prev, email: "" }))
+  .build();
+
+console.log(UserSchema.latestVersion);  // "v2"
+```
+
+---
+
+## schema.Type
+
+TypeScript type for the latest schema version.
+
+```typescript
+Type: T
+```
+
+### Example
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+type User = typeof UserSchema.Type;
+// { userId: string; name: string; email: string }
+
+const user: User = {
+  userId: "user-1",
+  name: "Alice",
+  email: "alice@example.com",
+};
+```
+
+---
+
+## schema["~standard"]
+
+Standard Schema v1 implementation.
+
+```typescript
+"~standard": {
+  version: 1;
+  vendor: "@std-toolkit/eschema";
+  validate: (value: unknown) => { value: T } | { issues: Array<{ message: string }> };
+  types: {
+    input: T;
+    output: T;
+  };
+}
+```
+
+### Example
+
+```typescript
+const result = UserSchema["~standard"].validate({
+  userId: "user-1",
+  name: "Alice",
+  email: "alice@example.com",
+});
+
+if ("value" in result) {
+  console.log(result.value);
+} else {
+  console.error(result.issues);
+}
+```
+
+See [Standard Schema Support](/std-toolkit/eschema/standard-schema) for details.
+
+---
+
+## ESchemaError
+
+Error type for all ESchema operations.
+
+```typescript
+class ESchemaError extends Data.TaggedError("ESchemaError") {
+  message: string;
+  cause?: unknown;
+}
+```
+
+<ResponseField name="message" type="string" required>
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="cause" type="unknown">
+  Underlying error cause (e.g., Effect Schema validation error)
+</ResponseField>
+
+### Example
+
+```typescript
+import { ESchemaError } from "@std-toolkit/eschema";
+
+const program = Effect.gen(function* () {
+  const user = yield* UserSchema.decode(invalidData);
+  return user;
+}).pipe(
+  Effect.catchTag("ESchemaError", (error) => {
+    console.error("Validation failed:", error.message);
+    if (error.cause) {
+      console.error("Cause:", error.cause);
+    }
+    return Effect.succeed(null);
+  })
+);
+```
+
+---
+
+## Type Utilities
+
+### ESchemaType
+
+Extract the TypeScript type from an ESchema.
+
+```typescript
+import type { ESchemaType } from "@std-toolkit/eschema";
+
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+}).build();
+
+type User = ESchemaType<typeof UserSchema>;
+// { userId: string; name: string }
+```
+
+### AnyESchema
+
+Type for any ESchema instance.
+
+```typescript
+import type { AnyESchema } from "@std-toolkit/eschema";
+
+function processSchema(schema: AnyESchema) {
+  console.log(schema.name);
+  console.log(schema.latestVersion);
+}
+```
+
+---
+
+## Complete Example
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema, Effect } from "effect";
+import type { ESchemaType } from "@std-toolkit/eschema";
+
+// Define schema with evolution
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .evolve("v3", { verified: Schema.Boolean }, (prev) => ({
+    ...prev,
+    verified: false,
+  }))
+  .build();
+
+// Extract TypeScript type
+type User = ESchemaType<typeof UserSchema>;
+// { userId: string; name: string; email: string; verified: boolean }
+
+// Use the schema
+const program = Effect.gen(function* () {
+  // Encode
+  const encoded = yield* UserSchema.encode({
+    userId: "user-1",
+    name: "Alice",
+    email: "alice@example.com",
+    verified: true,
+  });
+  console.log("Encoded:", encoded);
+  // { _v: "v3", userId: "user-1", name: "Alice", email: "alice@example.com", verified: true }
+  
+  // Decode v1 data (migrates to v3)
+  const decoded = yield* UserSchema.decode({
+    _v: "v1",
+    userId: "user-2",
+    name: "Bob",
+  });
+  console.log("Decoded:", decoded);
+  // { userId: "user-2", name: "Bob", email: "unknown@example.com", verified: false }
+  
+  // Partial updates
+  const updates = UserSchema.makePartial({ name: "Charlie" });
+  console.log("Updates:", updates);
+  // { _v: "v3", name: "Charlie" }
+  
+  return decoded;
+});
+
+Effect.runPromise(program);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="db-sqlite Overview" icon="database" href="/std-toolkit/db-sqlite/overview">
+    Use ESchema with SQLite
+  </Card>
+  <Card title="Core RPC Utilities" icon="network-wired" href="/std-toolkit/core/rpc">
+    Generate RPC endpoints
+  </Card>
+</CardGroup>

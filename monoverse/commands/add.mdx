@@ -1,0 +1,188 @@
+---
+title: add
+description: Add a dependency to the current workspace
+---
+
+The `add` command adds a dependency to the current workspace's `package.json`. It automatically syncs to existing versions in other workspaces when available.
+
+## Usage
+
+```bash
+monoverse add <package>
+```
+
+This command must be run from within a workspace directory.
+
+## Options
+
+<ParamField path="package" type="string" required>
+  The name of the npm package to add (e.g., `lodash`, `react`, `@types/node`)
+</ParamField>
+
+<ParamField path="-t, --type" type="string" default="dependency">
+  The type of dependency to add. Available options:
+  - `dependency` - Regular runtime dependency
+  - `dev` - Development dependency
+  - `peer` - Peer dependency
+  - `optional` - Optional dependency
+</ParamField>
+
+<ParamField path="-v, --version" type="string">
+  Specific version to install (e.g., `5.0.0`, `^18.0.0`). If not specified, Monoverse will:
+  1. Use an existing version from other workspaces if found
+  2. Fetch the latest version from npm if the package is new to the monorepo
+</ParamField>
+
+## Examples
+
+### Add a Regular Dependency
+
+```bash
+monoverse add lodash
+```
+
+Adds `lodash` as a regular dependency. If `lodash` is already used in other workspaces, it will use the existing version.
+
+### Add a Dev Dependency
+
+```bash
+monoverse add -t dev vitest
+```
+
+Adds `vitest` as a development dependency.
+
+### Add with Specific Version
+
+```bash
+monoverse add -v 5.0.0 lodash
+```
+
+Adds `lodash` with exactly version `5.0.0`, regardless of versions used in other workspaces.
+
+### Add a Scoped Package
+
+```bash
+monoverse add @types/node
+```
+
+Adds the scoped package `@types/node`.
+
+### Add Multiple Types
+
+<CodeGroup>
+```bash Regular Dependency
+monoverse add react
+```
+
+```bash Dev Dependency
+monoverse add -t dev typescript
+```
+
+```bash Peer Dependency
+monoverse add -t peer react
+```
+
+```bash Optional Dependency
+monoverse add -t optional fsevents
+```
+</CodeGroup>
+
+## Version Syncing
+
+Monoverse automatically syncs package versions across workspaces:
+
+### Single Existing Version
+
+If the package exists in other workspaces with a single version:
+
+```bash
+monoverse add lodash
+# Output: Using synced version 4.17.21 from workspaces
+# Output: Added lodash@4.17.21 to @acme/ui
+```
+
+### Multiple Existing Versions
+
+If the package exists with multiple versions, you'll be prompted to choose:
+
+```bash
+monoverse add lodash
+# Output: Multiple versions of "lodash" found. Select one:
+#   4.17.21
+#   4.17.19
+# (use arrow keys to select)
+```
+
+### New Package
+
+If the package doesn't exist in any workspace, the latest version is fetched from npm:
+
+```bash
+monoverse add new-package
+# Output: Fetching latest version of new-package...
+# Output: Added new-package@1.0.0 to @acme/ui
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Detect Current Workspace">
+    Monoverse identifies which workspace you're currently in based on your working directory.
+  </Step>
+
+  <Step title="Resolve Version">
+    If no version is specified:
+    - Checks all workspaces for existing versions of the package
+    - Uses the existing version if only one is found
+    - Prompts for selection if multiple versions exist
+    - Fetches the latest version from npm if the package is new
+  </Step>
+
+  <Step title="Update package.json">
+    Adds the dependency to the appropriate section of the workspace's `package.json`:
+    - `dependencies` for regular dependencies
+    - `devDependencies` for dev dependencies
+    - `peerDependencies` for peer dependencies
+    - `optionalDependencies` for optional dependencies
+  </Step>
+
+  <Step title="Install Package">
+    Run your package manager's install command to actually install the package:
+    
+    ```bash
+    npm install  # or yarn, pnpm, bun
+    ```
+  </Step>
+</Steps>
+
+## Error Handling
+
+### Not in a Workspace
+
+If you run the command outside of a workspace directory:
+
+```
+Error: Not inside a workspace. Navigate to a workspace directory first.
+```
+
+### Package Not Found
+
+If the package doesn't exist on npm:
+
+```
+Error: Package "nonexistent-package" not found on npm
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="remove" icon="minus" href="/monoverse/commands/remove">
+    Remove a dependency from the current workspace
+  </Card>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for version mismatches across workspaces
+  </Card>
+  <Card title="fix" icon="wrench" href="/monoverse/commands/fix">
+    Auto-fix version mismatches
+  </Card>
+</CardGroup>

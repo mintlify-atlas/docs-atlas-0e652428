@@ -1,0 +1,105 @@
+---
+title: 'Installation'
+description: 'Install and set up use-effect-ts in your React project'
+---
+
+# Installation
+
+Get started with use-effect-ts by installing it alongside its peer dependencies.
+
+## Prerequisites
+
+Before installing use-effect-ts, ensure you have:
+
+- **Node.js** 18.x or higher
+- **React** 19.2.3 or higher
+- **Effect** 3.19.14 or higher
+
+## Install the Package
+
+Choose your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install use-effect-ts effect react
+```
+
+```bash yarn
+yarn add use-effect-ts effect react
+```
+
+```bash pnpm
+pnpm add use-effect-ts effect react
+```
+
+</CodeGroup>
+
+<Note>
+  use-effect-ts lists `effect` and `react` as peer dependencies, so they need to be installed in your project.
+</Note>
+
+## Verify Installation
+
+Create a simple component to verify the installation:
+
+```tsx App.tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+function App() {
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* Console.log('Component mounted with Effect.TS!');
+    })
+  );
+
+  return <div>Hello from use-effect-ts!</div>;
+}
+
+export default App;
+```
+
+If you see the console message when the component mounts, you're all set!
+
+## TypeScript Configuration
+
+For the best experience with use-effect-ts, ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+<Tip>
+  Effect.TS works best with TypeScript's strict mode enabled for better type safety and error detection.
+</Tip>
+
+## Next Steps
+
+Now that you have use-effect-ts installed, explore the available hooks:
+
+<CardGroup cols={2}>
+  <Card title="useRunEffect" icon="play" href="/use-effect-ts/hooks/use-run-effect">
+    Run effects in parallel with automatic cleanup
+  </Card>
+  <Card title="useRunEffectLatest" icon="forward" href="/use-effect-ts/hooks/use-run-effect-latest">
+    Cancel previous executions automatically
+  </Card>
+  <Card title="useRunEffectQueue" icon="list" href="/use-effect-ts/hooks/use-run-effect-queue">
+    Queue effects for sequential execution
+  </Card>
+  <Card title="useComponentLifecycle" icon="recycle" href="/use-effect-ts/hooks/use-component-lifecycle">
+    Run effects on component mount
+  </Card>
+</CardGroup>

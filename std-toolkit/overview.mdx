@@ -1,0 +1,172 @@
+---
+title: STD Toolkit Overview
+description: Single table design toolkit for building type-safe, scalable applications with Effect
+---
+
+## What is STD Toolkit?
+
+STD Toolkit is a collection of TypeScript libraries for building type-safe applications using single table design patterns. Built on [Effect](https://effect.website), it provides schema versioning, database adapters, and RPC utilities.
+
+## Core Packages
+
+<CardGroup cols={3}>
+  <Card title="@std-toolkit/eschema" icon="diagram-project" href="/std-toolkit/eschema/overview">
+    Evolving schemas with automatic migrations and Standard Schema v1 support
+  </Card>
+  <Card title="@std-toolkit/db-sqlite" icon="database" href="/std-toolkit/db-sqlite/overview">
+    SQLite adapter with single table design patterns
+  </Card>
+  <Card title="@std-toolkit/core" icon="code" href="/std-toolkit/core/overview">
+    RPC utilities and type-safe CRUD operations
+  </Card>
+</CardGroup>
+
+## Why Single Table Design?
+
+Single table design stores multiple entity types in one table using composite keys. This pattern:
+
+- **Reduces join complexity** - Related data is stored together
+- **Improves query performance** - Uses indexes instead of joins
+- **Simplifies scaling** - One table to manage and shard
+- **Enables flexible access patterns** - Secondary indexes for different query needs
+
+<Note>
+  Single table design is inspired by DynamoDB patterns but works with any database that supports composite keys and secondary indexes.
+</Note>
+
+## Key Features
+
+### Type-Safe Schema Evolution
+
+Evolve your schemas over time with automatic migrations:
+
+```typescript
+const UserSchema = ESchema.make("User", "id", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .build();
+```
+
+### Effect-Based Operations
+
+All database operations return `Effect` for composable, type-safe error handling:
+
+```typescript
+const program = Effect.gen(function* () {
+  const user = yield* UsersTable.insert({ name: "Alice" });
+  const updated = yield* UsersTable.update({ id: user.value.id }, { name: "Bob" });
+  return updated;
+});
+```
+
+### Automatic Metadata
+
+Every row includes metadata for versioning and sync:
+
+- `_v` - Schema version
+- `_uid` - Unique update ID (ULID)
+- `_d` - Soft delete flag
+- `_e` - Entity type name
+
+## Quick Example
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { SQLiteTable, SQLiteEntity } from "@std-toolkit/sqlite";
+import { Schema, Effect } from "effect";
+import Database from "better-sqlite3";
+import { SqliteDBBetterSqlite3 } from "@std-toolkit/sqlite/adapters/better-sqlite3";
+
+// Define schema
+const UserSchema = ESchema.make("User", "userId", {
+  email: Schema.String,
+  name: Schema.String,
+}).build();
+
+// Create table
+const table = SQLiteTable.make({ tableName: "app_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .build();
+
+// Create entity
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+// Use it
+const db = new Database("app.db");
+const layer = SqliteDBBetterSqlite3(db);
+
+const program = Effect.gen(function* () {
+  yield* Users.setup();
+  
+  const user = yield* Users.insert({
+    userId: "user-1",
+    email: "alice@example.com",
+    name: "Alice",
+  });
+  
+  const byEmail = yield* Users.query("byEmail", {
+    pk: { email: "alice@example.com" },
+    sk: { ">=": null },
+  });
+  
+  console.log(byEmail.items[0]?.value.name); // "Alice"
+});
+
+Effect.runPromise(program.pipe(Effect.provide(layer)));
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Application Layer                          │
+│  ├─ Business Logic                          │
+│  └─ RPC Handlers (@std-toolkit/core)       │
+└─────────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────────┐
+│  Entity Layer                               │
+│  ├─ SQLiteEntity (CRUD operations)         │
+│  ├─ ESchema (validation & migration)       │
+│  └─ Index Derivations                       │
+└─────────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────────┐
+│  Table Layer                                │
+│  ├─ SQLiteTable (single table)             │
+│  ├─ Primary Index (pk, sk)                 │
+│  └─ Secondary Indexes (IDX1, IDX2, ...)    │
+└─────────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────────┐
+│  Database Layer                             │
+│  ├─ better-sqlite3 (Node.js)               │
+│  └─ Cloudflare Durable Objects             │
+└─────────────────────────────────────────────┘
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Single Table Design Concepts" icon="lightbulb" href="/std-toolkit/concepts">
+    Learn the core concepts and patterns
+  </Card>
+  <Card title="ESchema Getting Started" icon="rocket" href="/std-toolkit/eschema/getting-started">
+    Start with schema versioning
+  </Card>
+  <Card title="db-sqlite Getting Started" icon="database" href="/std-toolkit/db-sqlite/getting-started">
+    Build your first single table app
+  </Card>
+  <Card title="RPC Utilities" icon="network-wired" href="/std-toolkit/core/rpc">
+    Add type-safe RPC endpoints
+  </Card>
+</CardGroup>

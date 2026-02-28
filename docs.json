@@ -1,122 +1,111 @@
 {
   "$schema": "https://mintlify.com/docs.json",
+  "name": "pkishorez Monorepo",
   "theme": "mint",
-  "name": "Mint Starter Kit",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#10b981",
+    "light": "#34d399",
+    "dark": "#059669"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/pkishorez/monorepo"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/pkishorez/monorepo"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Overview",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Introduction",
+            "pages": ["introduction", "getting-started"]
+          }
+        ]
+      },
+      {
+        "tab": "Monoverse",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["monoverse/overview", "monoverse/installation"]
+          },
+          {
+            "group": "Commands",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "monoverse/commands/ls",
+              "monoverse/commands/add",
+              "monoverse/commands/remove",
+              "monoverse/commands/lint",
+              "monoverse/commands/fix",
+              "monoverse/commands/format",
+              "monoverse/commands/tui",
+              "monoverse/commands/updates"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Configuration",
+            "pages": ["monoverse/configuration"]
+          }
+        ]
+      },
+      {
+        "tab": "STD Toolkit",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["std-toolkit/overview", "std-toolkit/concepts"]
+          },
+          {
+            "group": "Core",
+            "pages": ["std-toolkit/core/overview", "std-toolkit/core/rpc"]
+          },
+          {
+            "group": "ESchema",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "std-toolkit/eschema/overview",
+              "std-toolkit/eschema/getting-started",
+              "std-toolkit/eschema/evolution",
+              "std-toolkit/eschema/standard-schema",
+              "std-toolkit/eschema/api-reference"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Database",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "std-toolkit/db-sqlite/overview",
+              "std-toolkit/db-sqlite/getting-started",
+              "std-toolkit/db-sqlite/operations",
+              "std-toolkit/db-sqlite/adapters",
+              "std-toolkit/db-sqlite/transactions"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "React Hooks",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "use-effect-ts",
             "pages": [
-              "api-reference/introduction"
-            ]
-          },
-          {
-            "group": "Endpoint examples",
-            "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "use-effect-ts/overview",
+              "use-effect-ts/installation",
+              "use-effect-ts/hooks/use-run-effect",
+              "use-effect-ts/hooks/use-run-effect-latest",
+              "use-effect-ts/hooks/use-run-effect-queue",
+              "use-effect-ts/hooks/use-component-lifecycle",
+              "use-effect-ts/hooks/use-component-scope",
+              "use-effect-ts/hooks/use-live-ref"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

@@ -1,0 +1,338 @@
+---
+title: ESchema Overview
+description: Evolving schemas with automatic migrations and Standard Schema v1 support
+---
+
+## What is ESchema?
+
+ESchema is a schema versioning library built on [Effect Schema](https://effect.website/docs/schema/introduction). It enables you to evolve your data structures over time with automatic migrations while maintaining full type safety.
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Schema Versioning" icon="code-branch">
+    Define multiple versions of your schema with migration functions
+  </Card>
+  <Card title="Automatic Migrations" icon="arrows-rotate">
+    Old data is automatically migrated to the latest version on decode
+  </Card>
+  <Card title="Type Safety" icon="shield-check">
+    Full TypeScript inference for all schema versions
+  </Card>
+  <Card title="Standard Schema v1" icon="standard">
+    Implements the Standard Schema spec for interoperability
+  </Card>
+</CardGroup>
+
+## Installation
+
+```bash
+npm install @std-toolkit/eschema effect
+```
+
+## Quick Example
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema, Effect } from "effect";
+
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .evolve("v3", { verified: Schema.Boolean }, (prev) => ({
+    ...prev,
+    verified: false,
+  }))
+  .build();
+
+// Old v1 data migrates automatically: v1 → v2 → v3
+const user = yield* UserSchema.decode({
+  _v: "v1",
+  userId: "user-1",
+  name: "Alice",
+});
+
+// Result: { userId: "user-1", name: "Alice", email: "unknown@example.com", verified: false }
+```
+
+## Core Concepts
+
+### Entity Name
+
+Every schema has a name that identifies the entity type:
+
+```typescript
+ESchema.make("User", "userId", { ... })  // Entity name: "User"
+```
+
+The name is included in encoded data as `_e` for type identification.
+
+### ID Field
+
+Each schema has a designated ID field (auto-generated if not provided):
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  // userId is automatically added as a String field
+}).build();
+
+// The ID field is part of the schema
+UserSchema.idField; // "userId"
+```
+
+<Note>
+  The ID field **cannot** be included in the schema fields - it's added automatically.
+</Note>
+
+### Version Metadata
+
+Encoded data includes a `_v` field indicating the schema version:
+
+```typescript
+const encoded = yield* UserSchema.encode({
+  userId: "user-1",
+  name: "Alice",
+});
+
+// { _v: "v1", userId: "user-1", name: "Alice" }
+```
+
+During decode, ESchema checks `_v` and runs migrations if needed.
+
+### Evolution and Migrations
+
+Evolve your schema with `.evolve(version, delta, migration)`:
+
+```typescript
+ESchema.make("User", "userId", {
+  firstName: Schema.String,
+  lastName: Schema.String,
+})
+  .evolve(
+    "v2",
+    {
+      firstName: null,  // Remove field
+      lastName: null,
+      fullName: Schema.String,  // Add field
+    },
+    (prev) => ({
+      userId: prev.userId,
+      fullName: `${prev.firstName} ${prev.lastName}`,
+    })
+  )
+  .build();
+```
+
+**Migration rules:**
+
+1. Migrations run sequentially (v1 → v2 → v3)
+2. Each migration only handles the previous version
+3. Use `null` to remove fields from the schema
+
+## Use Cases
+
+### Adding Optional Fields
+
+```typescript
+const ProductSchema = ESchema.make("Product", "productId", {
+  title: Schema.String,
+  price: Schema.Number,
+})
+  .evolve("v2", { currency: Schema.String }, (prev) => ({
+    ...prev,
+    currency: "USD",  // Default for existing products
+  }))
+  .build();
+```
+
+### Renaming Fields
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  username: Schema.String,
+})
+  .evolve(
+    "v2",
+    { username: null, email: Schema.String },
+    (prev) => ({
+      userId: prev.userId,
+      email: prev.username,  // Rename
+    })
+  )
+  .build();
+```
+
+### Transforming Data
+
+```typescript
+const OrderSchema = ESchema.make("Order", "orderId", {
+  total: Schema.Number,  // Stored as cents
+})
+  .evolve(
+    "v2",
+    { total: Schema.Number },  // Now stored as dollars
+    (prev) => ({
+      orderId: prev.orderId,
+      total: prev.total / 100,  // Convert cents to dollars
+    })
+  )
+  .build();
+```
+
+### Complex Migrations
+
+```typescript
+const ArticleSchema = ESchema.make("Article", "articleId", {
+  tags: Schema.String,  // Comma-separated
+})
+  .evolve(
+    "v2",
+    { tags: Schema.Array(Schema.String) },  // Array of strings
+    (prev) => ({
+      articleId: prev.articleId,
+      tags: prev.tags.split(",").map(t => t.trim()),
+    })
+  )
+  .build();
+```
+
+## Metadata Fields
+
+All encoded values include version metadata:
+
+<ResponseField name="_v" type="string" required>
+  Schema version (e.g., "v1", "v2")
+</ResponseField>
+
+<ResponseField name="_e" type="string">
+  Entity type name (auto-included by database layers)
+</ResponseField>
+
+```typescript
+const data = yield* UserSchema.encode({
+  userId: "user-1",
+  name: "Alice",
+});
+
+// { _v: "v1", userId: "user-1", name: "Alice" }
+```
+
+## Field Transformations
+
+Use Effect Schema transformations for encoding/decoding:
+
+```typescript
+import { Schema } from "effect";
+
+const StringToNumber = Schema.transform(
+  Schema.String,
+  Schema.Number,
+  {
+    decode: (s) => parseInt(s, 10),
+    encode: (n) => String(n),
+  }
+);
+
+const CounterSchema = ESchema.make("Counter", "counterId", {
+  count: StringToNumber,
+}).build();
+
+// Decode: "42" → 42
+// Encode: 42 → "42"
+```
+
+## Standard Schema v1
+
+ESchema implements the [Standard Schema](https://github.com/standard-schema/standard-schema) spec for use with form libraries:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  age: Schema.Number,
+}).build();
+
+// Access Standard Schema properties
+UserSchema["~standard"].version;  // 1
+UserSchema["~standard"].vendor;   // "@std-toolkit/eschema"
+
+// Validate with Standard Schema API
+const result = UserSchema["~standard"].validate({
+  userId: "user-1",
+  name: "Alice",
+  age: 30,
+});
+
+if ("value" in result) {
+  console.log(result.value);  // { userId: "user-1", name: "Alice", age: 30 }
+} else {
+  console.log(result.issues);  // Validation errors
+}
+```
+
+## Gotchas
+
+<Warning>
+  **Reserved field prefix:** Field names starting with `_` are reserved for metadata.
+</Warning>
+
+```typescript
+// ❌ Error: Cannot use underscore prefix
+ESchema.make("Bad", "id", {
+  _internal: Schema.String,
+});
+
+// ✅ OK
+ESchema.make("Good", "id", {
+  internal: Schema.String,
+});
+```
+
+<Warning>
+  **ID field exclusion:** The ID field is auto-added and cannot be in your schema.
+</Warning>
+
+```typescript
+// ❌ Error: userId is the ID field
+ESchema.make("User", "userId", {
+  userId: Schema.String,
+  name: Schema.String,
+});
+
+// ✅ OK: userId is added automatically
+ESchema.make("User", "userId", {
+  name: Schema.String,
+});
+```
+
+<Warning>
+  **Immutable after build:** Once `.build()` is called, the schema cannot be modified.
+</Warning>
+
+```typescript
+const schema = ESchema.make("User", "userId", { ... }).build();
+
+// ❌ Error: Cannot evolve after build
+schema.evolve("v2", { ... }, (prev) => ({ ... }));
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/std-toolkit/eschema/getting-started">
+    Build your first ESchema
+  </Card>
+  <Card title="Schema Evolution" icon="code-branch" href="/std-toolkit/eschema/evolution">
+    Learn migration strategies
+  </Card>
+  <Card title="Standard Schema Support" icon="standard" href="/std-toolkit/eschema/standard-schema">
+    Use with form libraries
+  </Card>
+  <Card title="API Reference" icon="book" href="/std-toolkit/eschema/api-reference">
+    Explore all methods
+  </Card>
+</CardGroup>

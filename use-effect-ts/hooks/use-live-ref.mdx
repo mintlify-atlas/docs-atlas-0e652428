@@ -1,0 +1,347 @@
+---
+title: 'useLiveRef'
+description: 'Create a ref that always contains the latest value'
+---
+
+# useLiveRef
+
+The `useLiveRef` hook creates a mutable ref object that automatically stays synchronized with the latest value. Unlike React's `useRef`, which maintains a stable reference but requires manual updates, `useLiveRef` updates the ref's current value on every render.
+
+## Signature
+
+```typescript
+function useLiveRef<T>(value: T): { current: T }
+```
+
+### Parameters
+
+<ParamField path="value" type="T" required>
+  The value to store in the ref. The ref will be updated with this value on every render.
+</ParamField>
+
+### Returns
+
+Returns a ref object with a `current` property that always contains the latest value:
+
+```typescript
+{ current: T }
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Ref Creation">
+    On the first render, `useLiveRef` creates a ref using React's `useRef` and initializes it with the provided value.
+  </Step>
+  
+  <Step title="Automatic Updates">
+    On every subsequent render, the ref's `current` property is updated to match the latest value passed to the hook.
+  </Step>
+  
+  <Step title="Stable Reference">
+    The ref object itself remains stable across renders (same object reference), but its `current` property is always up-to-date.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { Effect } from 'effect';
+import { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  const countRef = useLiveRef(count);
+
+  const logCount = () => {
+    Effect.runPromise(
+      Effect.gen(function* () {
+        yield* Effect.sleep('1 second');
+        // countRef.current always has the latest count value
+        console.log('Current count:', countRef.current);
+      })
+    );
+  };
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+      <button onClick={logCount}>Log Count (after 1s)</button>
+    </div>
+  );
+}
+```
+
+## Avoiding Stale Closures
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function SearchComponent() {
+  const [query, setQuery] = useState('');
+  const queryRef = useLiveRef(query);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      // Poll for results every 2 seconds
+      while (true) {
+        yield* Effect.sleep('2 seconds');
+        
+        // queryRef.current always has the latest search query
+        // Without useLiveRef, this would use the initial empty string
+        yield* Console.log('Searching for:', queryRef.current);
+        
+        if (queryRef.current) {
+          const response = yield* Effect.tryPromise(() =>
+            fetch(`/api/search?q=${queryRef.current}`)
+          );
+          const results = yield* Effect.tryPromise(() => response.json());
+          yield* Console.log('Results:', results);
+        }
+      }
+    })
+  );
+
+  return (
+    <input
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      placeholder="Search..."
+    />
+  );
+}
+```
+
+## Callback with Latest State
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { Effect } from 'effect';
+import { useState } from 'react';
+
+function FormComponent() {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    message: '',
+  });
+  
+  const formDataRef = useLiveRef(formData);
+
+  const handleSubmit = async () => {
+    // Start a long-running effect
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* Effect.sleep('2 seconds');
+        
+        // formDataRef.current has the latest form data
+        // even if the user continued typing during the delay
+        console.log('Submitting:', formDataRef.current);
+        
+        yield* Effect.tryPromise(() =>
+          fetch('/api/submit', {
+            method: 'POST',
+            body: JSON.stringify(formDataRef.current),
+          })
+        );
+      })
+    );
+  };
+
+  return (
+    <form>
+      <input
+        value={formData.name}
+        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+      />
+      <button type="button" onClick={handleSubmit}>
+        Submit
+      </button>
+    </form>
+  );
+}
+```
+
+## Event Handlers in Effects
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function KeyboardHandler() {
+  const [mode, setMode] = useState<'edit' | 'view'>('view');
+  const modeRef = useLiveRef(mode);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      const handleKeyPress = (e: KeyboardEvent) => {
+        Effect.runPromise(
+          Effect.gen(function* () {
+            // Access the current mode without stale closures
+            if (modeRef.current === 'edit' && e.key === 'Escape') {
+              yield* Console.log('Exiting edit mode');
+              setMode('view');
+            } else if (modeRef.current === 'view' && e.key === 'Enter') {
+              yield* Console.log('Entering edit mode');
+              setMode('edit');
+            }
+          })
+        );
+      };
+
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          window.addEventListener('keydown', handleKeyPress);
+          return handleKeyPress;
+        }),
+        (handler) => Effect.sync(() => {
+          window.removeEventListener('keydown', handler);
+        })
+      );
+
+      yield* Effect.never;
+    })
+  );
+
+  return (
+    <div>
+      <p>Mode: {mode}</p>
+      <p>Press Enter to edit, Escape to exit</p>
+    </div>
+  );
+}
+```
+
+## Passing Props to Effects
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+interface AutoSaveProps {
+  data: any;
+  saveEndpoint: string;
+  intervalSeconds: number;
+}
+
+function AutoSave({ data, saveEndpoint, intervalSeconds }: AutoSaveProps) {
+  const dataRef = useLiveRef(data);
+  const endpointRef = useLiveRef(saveEndpoint);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      while (true) {
+        yield* Effect.sleep(`${intervalSeconds} seconds`);
+        
+        yield* Console.log('Auto-saving...');
+        
+        // Use the latest data and endpoint
+        yield* Effect.tryPromise(() =>
+          fetch(endpointRef.current, {
+            method: 'POST',
+            body: JSON.stringify(dataRef.current),
+          })
+        );
+        
+        yield* Console.log('Saved!');
+      }
+    }),
+    { deps: [intervalSeconds] } // Re-run if interval changes
+  );
+
+  return <div>Auto-saving every {intervalSeconds}s...</div>;
+}
+```
+
+## Internal Usage in useComponentLifecycle
+
+The `useLiveRef` hook is used internally by `useComponentLifecycle` to ensure the effect always has access to the latest version:
+
+```typescript
+// Simplified version of useComponentLifecycle implementation
+export function useComponentLifecycle<A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope>,
+  { deps = [] }: { deps?: unknown[] } = {}
+) {
+  // Keep a live reference to the effect
+  const effectRef = useLiveRef(effect);
+
+  useEffect(() => {
+    const scope = Effect.runSync(Scope.make());
+    
+    // Use effectRef.current to get the latest effect
+    const fiber = Effect.runFork(effectRef.current.pipe(Scope.extend(scope)));
+
+    return () => {
+      Effect.runFork(
+        Effect.gen(function* () {
+          const exit = yield* Fiber.interrupt(fiber);
+          yield* Scope.close(scope, exit);
+        })
+      );
+    };
+  }, [effectRef, ...deps]);
+}
+```
+
+## Comparison with useRef
+
+```tsx
+import { useLiveRef } from 'use-effect-ts';
+import { useRef, useState, useEffect } from 'react';
+
+function ComparisonDemo() {
+  const [count, setCount] = useState(0);
+  
+  // Standard useRef - requires manual updates
+  const manualRef = useRef(count);
+  useEffect(() => {
+    manualRef.current = count; // Must update manually
+  }, [count]);
+  
+  // useLiveRef - updates automatically
+  const liveRef = useLiveRef(count);
+  
+  // Both refs now have the same value, but liveRef is less verbose
+  console.log(manualRef.current === liveRef.current); // true
+
+  return <div>Count: {count}</div>;
+}
+```
+
+## Important Notes
+
+<Note>
+  `useLiveRef` is particularly useful when working with long-running effects or event handlers that need access to the latest component state without causing re-renders or stale closures.
+</Note>
+
+<Tip>
+  Use `useLiveRef` when you need to access the latest value inside effects, intervals, event listeners, or async callbacks that may run after the value has changed.
+</Tip>
+
+<Warning>
+  Updating a ref does not trigger a re-render. If you need to trigger re-renders when a value changes, use `useState` instead.
+</Warning>
+
+## Use Cases
+
+- **Long-running effects** that need access to current state
+- **Event handlers** registered in effects that must use latest props/state
+- **Intervals and polling** that should reference current values
+- **Async operations** that need latest data when they complete
+- **Avoiding stale closures** in effect-based code
+- **Passing props/state to effects** without triggering re-runs
+
+## See Also
+
+- [useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle) - Uses `useLiveRef` internally
+- [useRunEffect](/use-effect-ts/hooks/use-run-effect) - Create effect runners
+- [useComponentScope](/use-effect-ts/hooks/use-component-scope) - Get component-scoped scope

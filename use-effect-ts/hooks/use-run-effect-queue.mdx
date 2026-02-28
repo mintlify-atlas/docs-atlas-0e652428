@@ -1,0 +1,353 @@
+---
+title: 'useRunEffectQueue'
+description: 'Queue Effect.TS effects for sequential execution'
+---
+
+# useRunEffectQueue
+
+The `useRunEffectQueue` hook creates a function that queues Effect.TS effects for sequential execution. Effects are executed one at a time in the order they were queued, ensuring that only one effect runs at any given moment.
+
+## Signature
+
+```typescript
+function useRunEffectQueue<Args extends any[], A, E>(
+  fn: (...args: Args) => Effect.Effect<A, E, never>
+): (...args: Args) => void
+```
+
+### Parameters
+
+<ParamField path="fn" type="(...args: Args) => Effect.Effect<A, E, never>" required>
+  A function that takes arguments and returns an Effect. The effect should not require any context (the `R` type parameter must be `never`).
+</ParamField>
+
+### Returns
+
+Returns a function with the same signature as `fn` that:
+- Adds the effect to a queue for execution
+- Executes effects sequentially (one at a time)
+- Does not return a promise (fire-and-forget style)
+- Automatically cleans up when the component unmounts
+
+## How It Works
+
+<Steps>
+  <Step title="Scope Initialization">
+    On component mount, `useRunEffectQueue` creates a component-scoped queue using `useComponentScope`.
+  </Step>
+  
+  <Step title="Queue Management">
+    When you call the returned function, the arguments are added to a queue. The queue processor checks if an effect is currently executing.
+  </Step>
+  
+  <Step title="Sequential Execution">
+    If no effect is running, the first item in the queue is dequeued and executed. When it completes, the next item is processed.
+  </Step>
+  
+  <Step title="Automatic Cleanup">
+    When the component unmounts, the queue is cleared and any running effect is interrupted.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useRunEffectQueue } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function NotificationQueue() {
+  const [notifications, setNotifications] = useState<string[]>([]);
+
+  const showNotification = useRunEffectQueue((message: string) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Showing: ${message}`);
+      
+      // Add to visible notifications
+      setNotifications(prev => [...prev, message]);
+      
+      // Wait for 2 seconds
+      yield* Effect.sleep('2 seconds');
+      
+      // Remove from visible notifications
+      setNotifications(prev => prev.filter(n => n !== message));
+      
+      yield* Console.log(`Dismissed: ${message}`);
+    })
+  );
+
+  const handleNotify = (message: string) => {
+    // Notifications will be shown one at a time
+    showNotification(message);
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleNotify('First notification')}>Notify 1</button>
+      <button onClick={() => handleNotify('Second notification')}>Notify 2</button>
+      <button onClick={() => handleNotify('Third notification')}>Notify 3</button>
+      
+      <div>
+        {notifications.map((msg, i) => (
+          <div key={i} className="notification">{msg}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## Sequential API Calls
+
+```tsx
+import { useRunEffectQueue } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+interface Task {
+  id: string;
+  status: 'pending' | 'processing' | 'completed';
+}
+
+function TaskProcessor() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  const processTask = useRunEffectQueue((taskId: string) =>
+    Effect.gen(function* () {
+      // Update status to processing
+      setTasks(prev => prev.map(t => 
+        t.id === taskId ? { ...t, status: 'processing' } : t
+      ));
+
+      yield* Console.log(`Processing task: ${taskId}`);
+
+      // Simulate API call
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/tasks/${taskId}/process`, { method: 'POST' })
+      );
+
+      yield* Effect.tryPromise(() => response.json());
+
+      // Update status to completed
+      setTasks(prev => prev.map(t => 
+        t.id === taskId ? { ...t, status: 'completed' } : t
+      ));
+
+      yield* Console.log(`Completed task: ${taskId}`);
+    })
+  );
+
+  const addTask = () => {
+    const newTask: Task = {
+      id: Math.random().toString(36),
+      status: 'pending',
+    };
+    
+    setTasks(prev => [...prev, newTask]);
+    processTask(newTask.id);
+  };
+
+  return (
+    <div>
+      <button onClick={addTask}>Add Task</button>
+      <ul>
+        {tasks.map(task => (
+          <li key={task.id}>
+            Task {task.id.slice(0, 8)} - {task.status}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Animation Queue
+
+```tsx
+import { useRunEffectQueue } from 'use-effect-ts';
+import { Effect } from 'effect';
+import { useRef } from 'react';
+
+function AnimatedCounter() {
+  const countRef = useRef(0);
+  const displayRef = useRef<HTMLDivElement>(null);
+
+  const animateToValue = useRunEffectQueue((targetValue: number) =>
+    Effect.gen(function* () {
+      const start = countRef.current;
+      const diff = targetValue - start;
+      const steps = 30;
+      const increment = diff / steps;
+
+      for (let i = 0; i < steps; i++) {
+        countRef.current += increment;
+        
+        if (displayRef.current) {
+          displayRef.current.textContent = Math.round(countRef.current).toString();
+        }
+        
+        yield* Effect.sleep('16 millis'); // ~60fps
+      }
+
+      countRef.current = targetValue;
+      if (displayRef.current) {
+        displayRef.current.textContent = targetValue.toString();
+      }
+    })
+  );
+
+  return (
+    <div>
+      <div ref={displayRef} style={{ fontSize: '48px' }}>0</div>
+      <button onClick={() => animateToValue(100)}>100</button>
+      <button onClick={() => animateToValue(500)}>500</button>
+      <button onClick={() => animateToValue(1000)}>1000</button>
+      {/* Animations will queue and play sequentially */}
+    </div>
+  );
+}
+```
+
+## Rate-Limited Operations
+
+```tsx
+import { useRunEffectQueue } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+function RateLimitedUploader() {
+  const uploadFile = useRunEffectQueue((file: File) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Starting upload: ${file.name}`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = yield* Effect.tryPromise(() =>
+        fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+      );
+
+      const result = yield* Effect.tryPromise(() => response.json());
+
+      yield* Console.log(`Completed upload: ${file.name}`);
+      
+      // Rate limiting: wait 1 second before next upload
+      yield* Effect.sleep('1 second');
+      
+      return result;
+    })
+  );
+
+  const handleFiles = (files: FileList) => {
+    // All files will be uploaded sequentially with 1s gaps
+    Array.from(files).forEach(file => uploadFile(file));
+  };
+
+  return (
+    <input
+      type="file"
+      multiple
+      onChange={(e) => e.target.files && handleFiles(e.target.files)}
+    />
+  );
+}
+```
+
+## Database Transaction Queue
+
+```tsx
+import { useRunEffectQueue } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+type Operation = 
+  | { type: 'create'; data: any }
+  | { type: 'update'; id: string; data: any }
+  | { type: 'delete'; id: string };
+
+function DataManager() {
+  const [pending, setPending] = useState(0);
+
+  const executeOperation = useRunEffectQueue((operation: Operation) =>
+    Effect.gen(function* () {
+      setPending(prev => prev + 1);
+      
+      yield* Console.log(`Executing ${operation.type} operation`);
+
+      let endpoint = '/api/items';
+      let method = 'POST';
+      let body = undefined;
+
+      if (operation.type === 'create') {
+        body = JSON.stringify(operation.data);
+      } else if (operation.type === 'update') {
+        endpoint = `/api/items/${operation.id}`;
+        method = 'PUT';
+        body = JSON.stringify(operation.data);
+      } else if (operation.type === 'delete') {
+        endpoint = `/api/items/${operation.id}`;
+        method = 'DELETE';
+      }
+
+      yield* Effect.tryPromise(() =>
+        fetch(endpoint, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        })
+      );
+
+      setPending(prev => prev - 1);
+      yield* Console.log(`Completed ${operation.type} operation`);
+    })
+  );
+
+  return (
+    <div>
+      <div>Pending operations: {pending}</div>
+      <button onClick={() => executeOperation({ type: 'create', data: { name: 'New' } })}>
+        Create
+      </button>
+      <button onClick={() => executeOperation({ type: 'update', id: '123', data: { name: 'Updated' } })}>
+        Update
+      </button>
+      <button onClick={() => executeOperation({ type: 'delete', id: '123' })}>
+        Delete
+      </button>
+    </div>
+  );
+}
+```
+
+## Important Notes
+
+<Note>
+  The returned function does not return a Promise. Effects are queued and executed asynchronously in a fire-and-forget manner. If you need to wait for completion or handle results, use [useRunEffect](/use-effect-ts/hooks/use-run-effect) or [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest) instead.
+</Note>
+
+<Warning>
+  Effects are executed one at a time in FIFO (First In, First Out) order. If you need parallel execution, use [useRunEffect](/use-effect-ts/hooks/use-run-effect). If you only care about the latest execution, use [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest).
+</Warning>
+
+<Tip>
+  `useRunEffectQueue` is perfect for operations that must happen in sequence, such as animations, rate-limited API calls, or operations that depend on consistent state ordering.
+</Tip>
+
+## Use Cases
+
+- **Sequential animations** that should not overlap
+- **Rate-limited API calls** to respect API quotas
+- **Notification systems** that show one message at a time
+- **File uploads** that must happen one by one
+- **Database transactions** that must maintain order
+- **State mutations** that depend on sequential consistency
+
+## See Also
+
+- [useRunEffect](/use-effect-ts/hooks/use-run-effect) - Parallel execution
+- [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest) - Latest execution only
+- [useComponentScope](/use-effect-ts/hooks/use-component-scope) - Manual scope management
+- [useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle) - Run effects on mount

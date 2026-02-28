@@ -1,0 +1,488 @@
+---
+title: Getting Started with ESchema
+description: Create your first evolving schema with automatic migrations
+---
+
+## Installation
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @std-toolkit/eschema effect
+    ```
+  </Step>
+
+  <Step title="Import the library">
+    ```typescript
+    import { ESchema } from "@std-toolkit/eschema";
+    import { Schema, Effect } from "effect";
+    ```
+  </Step>
+</Steps>
+
+## Creating Your First Schema
+
+### Basic Schema
+
+Start with a simple v1 schema:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+```
+
+**Breakdown:**
+
+- `"User"` - Entity type name
+- `"userId"` - ID field name (auto-added as `Schema.String`)
+- Schema fields - Your data fields
+
+### Encoding Data
+
+Encode validates and adds version metadata:
+
+```typescript
+const program = Effect.gen(function* () {
+  const encoded = yield* UserSchema.encode({
+    userId: "user-1",
+    name: "Alice",
+    email: "alice@example.com",
+  });
+  
+  console.log(encoded);
+  // {
+  //   _v: "v1",
+  //   userId: "user-1",
+  //   name: "Alice",
+  //   email: "alice@example.com"
+  // }
+});
+
+Effect.runPromise(program);
+```
+
+<Note>
+  The `_v` field is automatically added during encoding and indicates the schema version.
+</Note>
+
+### Decoding Data
+
+Decode validates and removes version metadata:
+
+```typescript
+const program = Effect.gen(function* () {
+  const decoded = yield* UserSchema.decode({
+    _v: "v1",
+    userId: "user-1",
+    name: "Alice",
+    email: "alice@example.com",
+  });
+  
+  console.log(decoded);
+  // {
+  //   userId: "user-1",
+  //   name: "Alice",
+  //   email: "alice@example.com"
+  // }
+});
+
+Effect.runPromise(program);
+```
+
+## Field Types
+
+Use any Effect Schema type:
+
+### Primitives
+
+```typescript
+const ProductSchema = ESchema.make("Product", "productId", {
+  title: Schema.String,
+  price: Schema.Number,
+  inStock: Schema.Boolean,
+}).build();
+```
+
+### Arrays
+
+```typescript
+const ArticleSchema = ESchema.make("Article", "articleId", {
+  title: Schema.String,
+  tags: Schema.Array(Schema.String),
+}).build();
+```
+
+### Objects
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  address: Schema.Struct({
+    street: Schema.String,
+    city: Schema.String,
+    zip: Schema.String,
+  }),
+}).build();
+```
+
+### Optional Fields
+
+```typescript
+const PostSchema = ESchema.make("Post", "postId", {
+  title: Schema.String,
+  content: Schema.String,
+  excerpt: Schema.optional(Schema.String),
+}).build();
+```
+
+### Nullable Fields
+
+```typescript
+const CommentSchema = ESchema.make("Comment", "commentId", {
+  text: Schema.String,
+  parentId: Schema.NullOr(Schema.String),
+}).build();
+```
+
+### Enums and Literals
+
+```typescript
+const TaskSchema = ESchema.make("Task", "taskId", {
+  title: Schema.String,
+  status: Schema.Literal("todo", "in_progress", "done"),
+}).build();
+```
+
+### Unions
+
+```typescript
+const NotificationSchema = ESchema.make("Notification", "notificationId", {
+  message: Schema.String,
+  type: Schema.Union(
+    Schema.Literal("info"),
+    Schema.Literal("warning"),
+    Schema.Literal("error")
+  ),
+}).build();
+```
+
+## Field Transformations
+
+Transform data during encoding/decoding:
+
+### String to Number
+
+```typescript
+const StringToNumber = Schema.transform(
+  Schema.String,
+  Schema.Number,
+  {
+    decode: (s) => parseInt(s, 10),
+    encode: (n) => String(n),
+  }
+);
+
+const CounterSchema = ESchema.make("Counter", "counterId", {
+  count: StringToNumber,
+}).build();
+
+// Stored as "42", used as 42
+```
+
+### Date Handling
+
+```typescript
+const DateFromString = Schema.transform(
+  Schema.String,
+  Schema.Date,
+  {
+    decode: (s) => new Date(s),
+    encode: (d) => d.toISOString(),
+  }
+);
+
+const EventSchema = ESchema.make("Event", "eventId", {
+  name: Schema.String,
+  startDate: DateFromString,
+}).build();
+
+// Stored as "2024-01-01T00:00:00.000Z", used as Date object
+```
+
+### Custom Transformations
+
+```typescript
+const UpperCase = Schema.transform(
+  Schema.String,
+  Schema.String,
+  {
+    decode: (s) => s.toUpperCase(),
+    encode: (s) => s.toLowerCase(),
+  }
+);
+
+const TagSchema = ESchema.make("Tag", "tagId", {
+  name: UpperCase,
+}).build();
+
+// Input: "typescript" → Stored: "typescript" → Output: "TYPESCRIPT"
+```
+
+## Error Handling
+
+All operations return `Effect` and can fail with `ESchemaError`:
+
+```typescript
+import { ESchemaError } from "@std-toolkit/eschema";
+
+const program = Effect.gen(function* () {
+  const result = yield* UserSchema.decode({
+    _v: "v1",
+    userId: "user-1",
+    name: 123,  // Wrong type
+  });
+  
+  return result;
+}).pipe(
+  Effect.catchTag("ESchemaError", (error) => {
+    console.error("Validation failed:", error.message);
+    console.error("Cause:", error.cause);
+    return Effect.succeed(null);
+  })
+);
+
+Effect.runPromise(program);
+```
+
+### Validation Errors
+
+```typescript
+const program = Effect.gen(function* () {
+  const result = yield* ProductSchema.encode({
+    productId: "prod-1",
+    title: "Widget",
+    price: "invalid",  // Should be number
+  });
+}).pipe(
+  Effect.catchAll((error) => {
+    console.error(error);
+    return Effect.succeed(null);
+  })
+);
+```
+
+### Unknown Version Errors
+
+```typescript
+const program = Effect.gen(function* () {
+  const result = yield* UserSchema.decode({
+    _v: "v99",  // Unknown version
+    userId: "user-1",
+    name: "Alice",
+  });
+}).pipe(
+  Effect.catchTag("ESchemaError", (error) => {
+    // error.message: "Unknown schema version: v99"
+    return Effect.succeed(null);
+  })
+);
+```
+
+## Working with Schemas
+
+### Accessing Fields
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+// Get field definitions
+const fields = UserSchema.fields;
+// { name: Schema.String, email: Schema.String, userId: Schema.String }
+
+// Get Effect Schema struct
+const schema = UserSchema.schema;
+// Schema.Struct({ name: Schema.String, email: Schema.String, userId: Schema.String })
+```
+
+### Type Inference
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+// Infer the TypeScript type
+type User = typeof UserSchema.Type;
+// { userId: string; name: string; email: string }
+
+const user: User = {
+  userId: "user-1",
+  name: "Alice",
+  email: "alice@example.com",
+};
+```
+
+### Partial Updates
+
+```typescript
+const updates = UserSchema.makePartial({
+  name: "Bob",
+});
+
+console.log(updates);
+// { _v: "v1", name: "Bob" }
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose descriptive entity names">
+    Use singular, PascalCase names for entities:
+
+    ```typescript
+    // Good
+    ESchema.make("User", "userId", { ... })
+    ESchema.make("BlogPost", "postId", { ... })
+
+    // Avoid
+    ESchema.make("users", "id", { ... })  // Plural
+    ESchema.make("post", "id", { ... })   // Generic ID field
+    ```
+  </Accordion>
+
+  <Accordion title="Use specific ID field names">
+    Use entity-specific ID field names instead of generic "id":
+
+    ```typescript
+    // Good
+    ESchema.make("User", "userId", { ... })
+    ESchema.make("Post", "postId", { ... })
+
+    // Avoid
+    ESchema.make("User", "id", { ... })
+    ESchema.make("Post", "id", { ... })
+    ```
+  </Accordion>
+
+  <Accordion title="Keep transformations simple">
+    Complex transformations can make debugging difficult:
+
+    ```typescript
+    // Good: Simple, predictable transformation
+    const StringToNumber = Schema.transform(
+      Schema.String,
+      Schema.Number,
+      {
+        decode: (s) => parseInt(s, 10),
+        encode: (n) => String(n),
+      }
+    );
+
+    // Avoid: Complex logic that might fail
+    const ComplexTransform = Schema.transform(
+      Schema.String,
+      Schema.Number,
+      {
+        decode: (s) => {
+          const parsed = parseFloat(s.replace(/[^0-9.]/g, ""));
+          if (isNaN(parsed)) throw new Error("Invalid");
+          return Math.round(parsed * 100) / 100;
+        },
+        encode: (n) => `$${n.toFixed(2)}`,
+      }
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Use Effect.gen for clarity">
+    The generator syntax makes Effect code more readable:
+
+    ```typescript
+    // Good: Clear control flow
+    const program = Effect.gen(function* () {
+      const encoded = yield* schema.encode(data);
+      const decoded = yield* schema.decode(encoded);
+      return decoded;
+    });
+
+    // Avoid: Harder to read
+    const program = schema.encode(data).pipe(
+      Effect.flatMap((encoded) => schema.decode(encoded))
+    );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Complete Example
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { Schema, Effect } from "effect";
+
+// Define schema
+const ProductSchema = ESchema.make("Product", "productId", {
+  title: Schema.String,
+  price: Schema.Number,
+  inStock: Schema.Boolean,
+  tags: Schema.Array(Schema.String),
+  description: Schema.optional(Schema.String),
+}).build();
+
+// Encode and decode
+const program = Effect.gen(function* () {
+  // Encode (add version metadata)
+  const encoded = yield* ProductSchema.encode({
+    productId: "prod-1",
+    title: "TypeScript Handbook",
+    price: 29.99,
+    inStock: true,
+    tags: ["programming", "typescript"],
+    description: "Learn TypeScript from scratch",
+  });
+  
+  console.log("Encoded:", encoded);
+  // {
+  //   _v: "v1",
+  //   productId: "prod-1",
+  //   title: "TypeScript Handbook",
+  //   price: 29.99,
+  //   inStock: true,
+  //   tags: ["programming", "typescript"],
+  //   description: "Learn TypeScript from scratch"
+  // }
+  
+  // Decode (remove version metadata)
+  const decoded = yield* ProductSchema.decode(encoded);
+  
+  console.log("Decoded:", decoded);
+  // {
+  //   productId: "prod-1",
+  //   title: "TypeScript Handbook",
+  //   price: 29.99,
+  //   inStock: true,
+  //   tags: ["programming", "typescript"],
+  //   description: "Learn TypeScript from scratch"
+  // }
+  
+  return decoded;
+});
+
+Effect.runPromise(program);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Evolution" icon="code-branch" href="/std-toolkit/eschema/evolution">
+    Learn how to evolve schemas over time
+  </Card>
+  <Card title="API Reference" icon="book" href="/std-toolkit/eschema/api-reference">
+    Explore all ESchema methods
+  </Card>
+</CardGroup>

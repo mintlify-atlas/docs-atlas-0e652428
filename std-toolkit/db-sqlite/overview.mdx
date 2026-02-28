@@ -1,0 +1,447 @@
+---
+title: db-sqlite Overview
+description: SQLite adapter with single table design patterns built on Effect
+---
+
+## What is db-sqlite?
+
+`@std-toolkit/db-sqlite` is a SQLite adapter that implements single table design patterns. It provides type-safe CRUD operations, automatic index derivations, and seamless integration with ESchema for schema versioning.
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Single Table Design" icon="table">
+    Store multiple entity types in one table with composite keys
+  </Card>
+  <Card title="Automatic Indexes" icon="magnifying-glass">
+    Derive primary and secondary indexes from entity fields
+  </Card>
+  <Card title="Type-Safe Operations" icon="shield-check">
+    Full TypeScript inference for all database operations
+  </Card>
+  <Card title="Effect-Based" icon="bolt">
+    All operations return Effect for composable error handling
+  </Card>
+</CardGroup>
+
+## Installation
+
+```bash
+npm install @std-toolkit/sqlite @std-toolkit/eschema effect
+```
+
+### Adapters
+
+Choose an adapter based on your environment:
+
+<CodeGroup>
+
+```bash Node.js (better-sqlite3)
+npm install better-sqlite3 @types/better-sqlite3
+```
+
+```bash Cloudflare Durable Objects
+# No additional dependencies - uses built-in SQL storage
+```
+
+</CodeGroup>
+
+## Quick Example
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { SQLiteTable, SQLiteEntity } from "@std-toolkit/sqlite";
+import { Schema, Effect } from "effect";
+import Database from "better-sqlite3";
+import { SqliteDBBetterSqlite3 } from "@std-toolkit/sqlite/adapters/better-sqlite3";
+
+// 1. Define schema
+const UserSchema = ESchema.make("User", "userId", {
+  email: Schema.String,
+  name: Schema.String,
+}).build();
+
+// 2. Create table
+const table = SQLiteTable.make({ tableName: "app_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .build();
+
+// 3. Create entity
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+// 4. Use it
+const db = new Database("app.db");
+const layer = SqliteDBBetterSqlite3(db);
+
+const program = Effect.gen(function* () {
+  yield* Users.setup();
+  
+  const user = yield* Users.insert({
+    userId: "user-1",
+    email: "alice@example.com",
+    name: "Alice",
+  });
+  
+  const found = yield* Users.get({ userId: "user-1" });
+  console.log(found?.value.name);  // "Alice"
+});
+
+Effect.runPromise(program.pipe(Effect.provide(layer)));
+```
+
+## Core Concepts
+
+### Three Layers
+
+```
+SQLiteEntity  →  Type-safe CRUD operations
+     ↓
+SQLiteTable   →  Single table with composite keys
+     ↓
+SqliteDB      →  Database adapter (better-sqlite3 or DO)
+```
+
+#### SQLiteEntity
+
+High-level entity operations with automatic index derivations:
+
+```typescript
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()  // Derive pk/sk from schema
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+yield* Users.insert({ ... });
+yield* Users.get({ userId: "user-1" });
+yield* Users.query("byEmail", { pk: { email: "alice@example.com" }, sk: { ">=": null } });
+```
+
+#### SQLiteTable
+
+Low-level table operations with manual pk/sk values:
+
+```typescript
+const table = SQLiteTable.make({ tableName: "app_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .build();
+
+yield* table.setup();
+yield* table.putItem({ pk: "User", sk: "user-1", _data: "..." });
+yield* table.getItem({ pk: "User", sk: "user-1" });
+```
+
+#### SqliteDB
+
+Raw SQL operations (rarely used directly):
+
+```typescript
+const db = yield* SqliteDB;
+yield* db.createTable("app_data", columns, primaryKey);
+yield* db.insert("app_data", values);
+```
+
+### Row Structure
+
+Every row in the table has:
+
+<ResponseField name="pk" type="string" required>
+  Partition key - groups related items (e.g., "User", "Post#author-1")
+</ResponseField>
+
+<ResponseField name="sk" type="string" required>
+  Sort key - uniquely identifies item within partition (e.g., "user-123")
+</ResponseField>
+
+<ResponseField name="_data" type="string" required>
+  JSON-encoded entity data
+</ResponseField>
+
+<ResponseField name="_e" type="string" required>
+  Entity type name (e.g., "User")
+</ResponseField>
+
+<ResponseField name="_v" type="string" required>
+  Schema version (e.g., "v1")
+</ResponseField>
+
+<ResponseField name="_uid" type="string" required>
+  Update ID - ULID generated on each write for ordering
+</ResponseField>
+
+<ResponseField name="_d" type="number" required>
+  Soft delete flag (0 or 1)
+</ResponseField>
+
+<ResponseField name="IDX1PK, IDX1SK, ..." type="string">
+  Secondary index columns (nullable)
+</ResponseField>
+
+### Index Derivations
+
+Indexes are derived from entity fields:
+
+```typescript
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()  // pk: "User", sk: userId
+  .index("IDX1", "byEmail", { pk: ["email"] })  // pk: "byEmail#{email}", sk: _uid
+  .build();
+```
+
+**Primary index:**
+- `pk`: Entity name + specified fields (or just entity name if none)
+- `sk`: ID field from schema
+
+**Secondary indexes:**
+- `pk`: Index name + specified fields
+- `sk`: `_uid` (for time-ordering)
+
+**Timeline indexes:**
+- `pk`: Same as primary
+- `sk`: `_uid` (for time-ordering)
+
+## Use Cases
+
+### Multi-Entity Application
+
+```typescript
+// One table, multiple entities
+const table = SQLiteTable.make({ tableName: "app_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .index("IDX2", "IDX2PK", "IDX2SK")
+  .build();
+
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+const Posts = SQLiteEntity.make(table)
+  .eschema(PostSchema)
+  .primary({ pk: ["authorId"] })  // Group posts by author
+  .index("IDX1", "byStatus", { pk: ["status"] })
+  .build();
+
+const Comments = SQLiteEntity.make(table)
+  .eschema(CommentSchema)
+  .primary({ pk: ["postId"] })  // Group comments by post
+  .timeline("IDX2")  // Chronological ordering
+  .build();
+```
+
+### Time-Series Data
+
+```typescript
+const Metrics = SQLiteEntity.make(table)
+  .eschema(MetricSchema)
+  .primary({ pk: ["metricType"] })
+  .timeline("IDX1")  // Query latest metrics
+  .build();
+
+// Get latest CPU metrics
+const latest = yield* Metrics.query("timeline", {
+  pk: { metricType: "cpu" },
+  sk: { "<": null },
+}, { limit: 100 });
+```
+
+### Multi-Tenant Application
+
+```typescript
+const Documents = SQLiteEntity.make(table)
+  .eschema(DocumentSchema)
+  .primary({ pk: ["tenantId"] })  // Partition by tenant
+  .index("IDX1", "byOwner", { pk: ["tenantId", "ownerId"] })
+  .build();
+
+// Query documents for a tenant
+const docs = yield* Documents.query("primary", {
+  pk: { tenantId: "tenant-1" },
+  sk: { ">=": null },
+});
+```
+
+## Metadata Fields
+
+Every entity includes automatic metadata:
+
+```typescript
+const user = yield* Users.insert({ name: "Alice", email: "alice@example.com" });
+
+console.log(user.value);
+// { userId: "01HQXYZ...", name: "Alice", email: "alice@example.com" }
+
+console.log(user.meta);
+// {
+//   _v: "v1",
+//   _uid: "01HQABC...",
+//   _d: false,
+//   _e: "User"
+// }
+```
+
+<Note>
+  The `_uid` field is a ULID that changes on every update. Use it for chronological ordering and sync.
+</Note>
+
+## Error Handling
+
+All operations return `Effect` and can fail with `SqliteDBError`:
+
+```typescript
+import { SqliteDBError } from "@std-toolkit/sqlite";
+
+const program = Effect.gen(function* () {
+  const user = yield* Users.get({ userId: "invalid" });
+  return user;
+}).pipe(
+  Effect.catchTag("SqliteDBError", (error) => {
+    console.error("Database error:", error.error._tag);
+    
+    if (error.error._tag === "GetFailed") {
+      console.error("Failed to get item:", error.error.cause);
+    }
+    
+    return Effect.succeed(null);
+  })
+);
+```
+
+### Error Types
+
+- `CreateTableFailed`
+- `AddColumnFailed`
+- `CreateIndexFailed`
+- `InsertFailed`
+- `UpdateFailed`
+- `DeleteFailed`
+- `GetFailed`
+- `QueryFailed`
+- `BeginFailed`
+- `CommitFailed`
+- `RollbackFailed`
+- `NestedTransactionNotSupported`
+
+## Adapters
+
+### better-sqlite3 (Node.js)
+
+```typescript
+import Database from "better-sqlite3";
+import { SqliteDBBetterSqlite3 } from "@std-toolkit/sqlite/adapters/better-sqlite3";
+
+const db = new Database("app.db");
+const layer = SqliteDBBetterSqlite3(db);
+
+Effect.runPromise(program.pipe(Effect.provide(layer)));
+```
+
+### Cloudflare Durable Objects
+
+```typescript
+import { SqliteDBDO } from "@std-toolkit/sqlite/adapters/do";
+
+export class MyDurableObject {
+  constructor(state, env) {
+    this.state = state;
+  }
+  
+  async fetch(request) {
+    const layer = SqliteDBDO(this.state.storage.sql);
+    
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(layer))
+    );
+    
+    return new Response(JSON.stringify(result));
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose pk fields based on query patterns">
+    The most important decision is what goes in your pk:
+
+    ```typescript
+    // Group posts by author
+    .primary({ pk: ["authorId"] })
+
+    // Group comments by post
+    .primary({ pk: ["postId"] })
+
+    // No grouping (each user is independent)
+    .primary()
+    ```
+  </Accordion>
+
+  <Accordion title="Use secondary indexes for alternative lookups">
+    Add indexes for fields you'll query frequently:
+
+    ```typescript
+    const Users = SQLiteEntity.make(table)
+      .eschema(UserSchema)
+      .primary()
+      .index("IDX1", "byEmail", { pk: ["email"] })
+      .index("IDX2", "byStatus", { pk: ["status"] })
+      .build();
+    ```
+  </Accordion>
+
+  <Accordion title="Use soft deletes for sync">
+    Soft deletes allow syncing clients to detect deletions:
+
+    ```typescript
+    // Soft delete (recommended)
+    yield* Users.delete({ userId: "user-1" });
+
+    // Hard delete (avoid)
+    yield* Users.dangerouslyRemoveAllRows("i know what i am doing");
+    ```
+  </Accordion>
+
+  <Accordion title="Leverage _uid for time-ordering">
+    Use timeline indexes for chronological queries:
+
+    ```typescript
+    const Posts = SQLiteEntity.make(table)
+      .eschema(PostSchema)
+      .primary()
+      .timeline("IDX1")  // sk = _uid
+      .build();
+
+    // Get latest 10 posts
+    const latest = yield* Posts.query("timeline", {
+      pk: {},
+      sk: { "<": null },
+    }, { limit: 10 });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/std-toolkit/db-sqlite/getting-started">
+    Build your first single table app
+  </Card>
+  <Card title="Database Operations" icon="database" href="/std-toolkit/db-sqlite/operations">
+    Learn CRUD operations
+  </Card>
+  <Card title="Adapters" icon="plug" href="/std-toolkit/db-sqlite/adapters">
+    Configure database adapters
+  </Card>
+  <Card title="Transactions" icon="arrows-rotate" href="/std-toolkit/db-sqlite/transactions">
+    Handle transactions safely
+  </Card>
+</CardGroup>

@@ -1,0 +1,93 @@
+---
+title: ls
+description: List all workspaces in a tree structure
+---
+
+The `ls` command displays all workspaces in your monorepo as a tree structure, making it easy to understand your monorepo layout.
+
+## Usage
+
+```bash
+monoverse ls
+```
+
+Run this command from anywhere within your monorepo. Monoverse will automatically find the monorepo root and discover all workspaces.
+
+## Example Output
+
+```
+Workspaces (12)
+
+my-monorepo
+├── apps
+│   ├── web (web)
+│   └── mobile (mobile)
+└── packages
+    ├── ui (@acme/ui)
+    └── utils (@acme/utils) (cwd)
+```
+
+## Output Details
+
+### Tree Structure
+
+The output shows the directory structure of your monorepo with each workspace displayed in the tree. The tree format makes it easy to see how workspaces are organized.
+
+### Workspace Names
+
+For each workspace, the output shows:
+- The directory name (e.g., `web`, `ui`)
+- The package name in parentheses (e.g., `(@acme/ui)`) - this is the `name` field from the workspace's `package.json`
+
+### Current Working Directory
+
+If you're currently inside a workspace directory, it will be marked with `(cwd)` to indicate your current position.
+
+### Error Reporting
+
+If any workspaces fail to load (e.g., due to malformed `package.json` files), they will be listed in an "Errors" section below the tree:
+
+```
+Errors (2)
+
+  packages/broken: Invalid package.json format
+  apps/legacy: Failed to read package.json
+```
+
+## Use Cases
+
+### Exploring a New Monorepo
+
+When you first clone a monorepo, use `monoverse ls` to quickly understand the project structure:
+
+```bash
+cd ~/projects/new-monorepo
+monoverse ls
+```
+
+### Finding Workspaces
+
+Use the output to locate specific workspaces by name:
+
+```bash
+monoverse ls | grep "@acme/ui"
+```
+
+### Verifying Workspace Detection
+
+After adding a new workspace, verify that Monoverse detects it correctly:
+
+```bash
+monoverse ls
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="add" icon="plus" href="/monoverse/commands/add">
+    Add dependencies to the current workspace
+  </Card>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for issues across all workspaces
+  </Card>
+</CardGroup>

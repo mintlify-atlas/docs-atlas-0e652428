@@ -1,0 +1,268 @@
+---
+title: fix
+description: Auto-fix detected issues across all workspaces
+---
+
+The `fix` command automatically resolves issues detected by the `lint` command. It can fix formatting, pin versions, and resolve version mismatches across your monorepo.
+
+## Usage
+
+```bash
+monoverse fix
+```
+
+Run this command from anywhere within your monorepo.
+
+## Options
+
+<ParamField path="-i, --interactive" type="boolean" default="false">
+  Resolve version mismatches interactively by prompting you to choose which version to use. Without this flag, version mismatches will be skipped.
+</ParamField>
+
+## What It Fixes
+
+### Automatic Fixes
+
+These issues are fixed automatically without prompting:
+
+1. **Unformatted package.json files**: Formats all package.json files to follow consistent structure and field ordering
+2. **Unpinned versions**: Removes range specifiers (`^`, `~`) to pin packages to exact versions
+
+### Interactive Fixes
+
+These issues require the `-i` flag and user input:
+
+3. **Version mismatches**: When the same package has different versions across workspaces, you choose which version to standardize on
+
+### Cannot Fix
+
+4. **Duplicate workspace names**: Must be fixed manually by renaming workspaces
+
+## Examples
+
+### Basic Auto-Fix
+
+```bash
+monoverse fix
+```
+
+Fixes formatting and unpinned versions automatically. Version mismatches will be skipped.
+
+### Interactive Fix
+
+```bash
+monoverse fix -i
+```
+
+Fixes formatting and unpinned versions, then prompts you to resolve version mismatches interactively.
+
+## Example Output
+
+### Automatic Fixes
+
+```bash
+$ monoverse fix
+
+Summary
+────────────────────────────────────────
+Fixed    3 formatting issues
+Fixed    5 unpinned versions
+Skipped  2 version mismatches (use -i to resolve)
+         lodash: 4.17.21, 4.17.19
+         react: 18.0.0, 18.2.0
+────────────────────────────────────────
+Total    8 fixed, 2 skipped
+```
+
+### Interactive Fix
+
+```bash
+$ monoverse fix -i
+
+Resolving version mismatches
+
+Select version for "lodash":
+> 4.17.21 (@acme/ui, @acme/utils)
+  4.17.19 (web)
+
+Select version for "react":
+  18.0.0 (@acme/ui)
+> 18.2.0 (web, mobile)
+
+Summary
+────────────────────────────────────────
+Fixed    3 formatting issues
+Fixed    5 unpinned versions
+Fixed    3 version mismatches
+────────────────────────────────────────
+Total    11 fixed, 0 skipped
+```
+
+### Duplicate Workspace Error
+
+```bash
+$ monoverse fix
+
+Cannot fix: duplicate workspace names detected
+
+@acme/ui
+  packages/ui
+  apps/ui
+
+Rename the workspaces to have unique names.
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Run Lint">
+    Analyzes all workspaces and detects violations using the same rules as the `lint` command.
+  </Step>
+
+  <Step title="Check for Blocking Issues">
+    If duplicate workspace names are found, the command stops and reports the issue (must be fixed manually).
+  </Step>
+
+  <Step title="Fix Formatting">
+    Formats all package.json files with formatting violations using a consistent structure.
+  </Step>
+
+  <Step title="Pin Versions">
+    Removes range specifiers (`^`, `~`) from all unpinned dependencies, converting them to exact versions.
+  </Step>
+
+  <Step title="Resolve Version Mismatches (Interactive Only)">
+    If `-i` flag is used, prompts you to select which version to use for each package with version mismatches. Updates all workspaces to use the selected version.
+  </Step>
+
+  <Step title="Display Summary">
+    Shows a summary of what was fixed and what was skipped.
+  </Step>
+</Steps>
+
+## Fix Details
+
+### Formatting Fixes
+
+Formats package.json files to:
+- Use consistent indentation (2 spaces)
+- Order fields in a standard sequence
+- Sort dependencies alphabetically
+- Maintain consistent line endings
+
+**Before**:
+```json
+{
+  "dependencies": {
+    "react": "18.0.0",
+    "lodash": "4.17.21"
+  },
+  "name": "@acme/ui",
+  "version": "1.0.0"
+}
+```
+
+**After**:
+```json
+{
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "dependencies": {
+    "lodash": "4.17.21",
+    "react": "18.0.0"
+  }
+}
+```
+
+### Version Pinning
+
+Converts range specifiers to exact versions:
+
+**Before**:
+```json
+{
+  "dependencies": {
+    "react": "^18.0.0",
+    "lodash": "~4.17.21"
+  }
+}
+```
+
+**After**:
+```json
+{
+  "dependencies": {
+    "react": "18.0.0",
+    "lodash": "4.17.21"
+  }
+}
+```
+
+### Version Mismatch Resolution
+
+When using `-i`, you're prompted to choose which version to use:
+
+```
+Select version for "lodash":
+> 4.17.21 (@acme/ui, @acme/utils)  ← Most workspaces use this
+  4.17.19 (web)                    ← One workspace uses this
+```
+
+After selection, all workspaces are updated to use the chosen version.
+
+## Exit Behavior
+
+The command always exits with code 0, even if it skips some fixes. Check the summary to see what was fixed and what was skipped.
+
+## Use Cases
+
+### Before Committing
+
+Fix all issues before committing:
+
+```bash
+monoverse fix -i
+git add .
+git commit -m "Fix monorepo issues"
+```
+
+### CI/CD Enforcement
+
+Verify no issues remain after running fix:
+
+```bash
+monoverse fix
+monoverse lint  # Should pass with no issues
+```
+
+### Regular Maintenance
+
+Run fix periodically to maintain monorepo health:
+
+```bash
+# Weekly maintenance
+monoverse fix -i
+```
+
+### After Dependency Updates
+
+Fix issues after updating dependencies:
+
+```bash
+npm update
+monoverse fix -i
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for issues without fixing them
+  </Card>
+  <Card title="format" icon="paintbrush" href="/monoverse/commands/format">
+    Format package.json files only
+  </Card>
+  <Card title="add" icon="plus" href="/monoverse/commands/add">
+    Add dependencies with automatic version syncing
+  </Card>
+</CardGroup>

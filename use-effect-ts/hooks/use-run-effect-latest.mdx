@@ -1,0 +1,297 @@
+---
+title: 'useRunEffectLatest'
+description: 'Run Effect.TS effects, automatically cancelling previous executions'
+---
+
+# useRunEffectLatest
+
+The `useRunEffectLatest` hook creates a function that executes Effect.TS effects while automatically cancelling any previously running execution. This is ideal for scenarios like search-as-you-type or real-time filtering where you only care about the most recent request.
+
+## Signature
+
+```typescript
+function useRunEffectLatest<Args extends any[], A, E>(
+  fn: (...args: Args) => Effect.Effect<A, E, never>
+): (...args: Args) => Promise<Exit<A, E>>
+```
+
+### Parameters
+
+<ParamField path="fn" type="(...args: Args) => Effect.Effect<A, E, never>" required>
+  A function that takes arguments and returns an Effect. The effect should not require any context (the `R` type parameter must be `never`).
+</ParamField>
+
+### Returns
+
+Returns a function with the same signature as `fn` that:
+- Executes the effect within a managed `FiberHandle`
+- Automatically interrupts the previous execution when called again
+- Returns a `Promise<Exit<A, E>>` representing the effect's result
+- Cleans up the fiber when the component unmounts
+
+## How It Works
+
+<Steps>
+  <Step title="Scope Initialization">
+    On component mount, `useRunEffectLatest` creates a component-scoped `FiberHandle` using `useComponentScope`.
+  </Step>
+  
+  <Step title="Effect Execution">
+    When you call the returned function, it runs the effect through the `FiberHandle`. If a previous effect is still running, it gets interrupted automatically.
+  </Step>
+  
+  <Step title="Automatic Cleanup">
+    When the component unmounts, any running fiber is automatically interrupted and cleaned up.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useRunEffectLatest } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function SearchComponent() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+
+  const search = useRunEffectLatest((searchTerm: string) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Starting search for: ${searchTerm}`);
+      
+      // Simulate API delay
+      yield* Effect.sleep('500 millis');
+      
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/search?q=${searchTerm}`)
+      );
+      
+      const data = yield* Effect.tryPromise(() => response.json());
+      
+      yield* Console.log(`Completed search for: ${searchTerm}`);
+      return data.results;
+    })
+  );
+
+  const handleInputChange = async (value: string) => {
+    setQuery(value);
+    
+    // Previous search is automatically cancelled
+    const exit = await search(value);
+    
+    if (exit._tag === 'Success') {
+      setResults(exit.value);
+    }
+  };
+
+  return (
+    <div>
+      <input 
+        value={query}
+        onChange={(e) => handleInputChange(e.target.value)} 
+        placeholder="Search..."
+      />
+      <ul>
+        {results.map(result => <li key={result.id}>{result.title}</li>)}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Debounced Search Example
+
+```tsx
+import { useRunEffectLatest } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState, useCallback } from 'react';
+
+function DebouncedSearch() {
+  const [results, setResults] = useState([]);
+
+  const search = useRunEffectLatest((query: string) =>
+    Effect.gen(function* () {
+      // Wait for debounce period
+      yield* Effect.sleep('300 millis');
+      
+      yield* Console.log(`Searching for: ${query}`);
+      
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/search?q=${query}`)
+      );
+      
+      return yield* Effect.tryPromise(() => response.json());
+    })
+  );
+
+  const handleSearch = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setResults([]);
+      return;
+    }
+    
+    const exit = await search(query);
+    
+    if (exit._tag === 'Success') {
+      setResults(exit.value);
+    }
+  }, [search]);
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch(e.target.value)} />
+      <ul>
+        {results.map(r => <li key={r.id}>{r.name}</li>)}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Real-Time Filtering
+
+```tsx
+import { useRunEffectLatest } from 'use-effect-ts';
+import { Effect } from 'effect';
+import { useState } from 'react';
+
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+}
+
+function ProductFilter() {
+  const [filters, setFilters] = useState({ category: '', maxPrice: 1000 });
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const fetchFiltered = useRunEffectLatest(
+    (category: string, maxPrice: number) =>
+      Effect.gen(function* () {
+        const params = new URLSearchParams({
+          category,
+          maxPrice: maxPrice.toString(),
+        });
+
+        const response = yield* Effect.tryPromise(() =>
+          fetch(`/api/products?${params}`)
+        );
+
+        return yield* Effect.tryPromise(() => response.json());
+      })
+  );
+
+  const updateFilter = async (newFilters: typeof filters) => {
+    setFilters(newFilters);
+    
+    const exit = await fetchFiltered(newFilters.category, newFilters.maxPrice);
+    
+    if (exit._tag === 'Success') {
+      setProducts(exit.value);
+    }
+  };
+
+  return (
+    <div>
+      <select 
+        value={filters.category}
+        onChange={(e) => updateFilter({ ...filters, category: e.target.value })}
+      >
+        <option value="">All Categories</option>
+        <option value="electronics">Electronics</option>
+        <option value="books">Books</option>
+      </select>
+      
+      <input
+        type="range"
+        min="0"
+        max="1000"
+        value={filters.maxPrice}
+        onChange={(e) => updateFilter({ ...filters, maxPrice: Number(e.target.value) })}
+      />
+      
+      <div>{products.length} products found</div>
+    </div>
+  );
+}
+```
+
+## With Interruption Detection
+
+```tsx
+import { useRunEffectLatest } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+function InterruptibleTask() {
+  const runTask = useRunEffectLatest((taskId: number) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Task ${taskId} started`);
+      
+      try {
+        yield* Effect.sleep('3 seconds');
+        yield* Console.log(`Task ${taskId} completed`);
+        return `Result ${taskId}`;
+      } catch (error) {
+        yield* Console.log(`Task ${taskId} was interrupted`);
+        throw error;
+      }
+    })
+  );
+
+  const handleClick = async (id: number) => {
+    const exit = await runTask(id);
+    
+    if (exit._tag === 'Failure') {
+      console.log('Task was interrupted or failed');
+    } else {
+      console.log('Task completed:', exit.value);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleClick(1)}>Start Task 1</button>
+      <button onClick={() => handleClick(2)}>Start Task 2</button>
+      {/* Clicking Task 2 will interrupt Task 1 */}
+    </div>
+  );
+}
+```
+
+## Important Notes
+
+<Warning>
+  The returned function should not be called before the component-scoped `FiberHandle` is initialized. If you need to run an effect on component mount, use `useComponentLifecycle`:
+
+  ```tsx
+  const runEffect = useRunEffectLatest(myEffect);
+  
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* runEffect(initialArgs);
+    })
+  );
+  ```
+</Warning>
+
+<Note>
+  Only one effect can be running at a time. When you call the returned function while a previous execution is still running, the previous execution will be interrupted. If you need parallel execution, use [useRunEffect](/use-effect-ts/hooks/use-run-effect). For sequential queueing, use [useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue).
+</Note>
+
+## Use Cases
+
+- **Search-as-you-type** functionality
+- **Real-time filtering** and sorting
+- **Auto-save** features where only the latest change matters
+- **Autocomplete** suggestions
+- **Live preview** updates
+- **Polling** that should restart when parameters change
+
+## See Also
+
+- [useRunEffect](/use-effect-ts/hooks/use-run-effect) - Parallel execution
+- [useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue) - Sequential execution
+- [useComponentScope](/use-effect-ts/hooks/use-component-scope) - Manual scope management
+- [useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle) - Run effects on mount

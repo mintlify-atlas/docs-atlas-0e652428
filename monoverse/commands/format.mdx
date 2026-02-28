@@ -1,0 +1,219 @@
+---
+title: format
+description: Format all package.json files across the monorepo
+---
+
+The `format` command formats all package.json files in your monorepo to follow a consistent structure and field ordering.
+
+## Usage
+
+```bash
+monoverse format
+```
+
+Run this command from anywhere within your monorepo.
+
+## What It Does
+
+The command formats all package.json files in all workspaces to:
+
+- Use consistent indentation (2 spaces)
+- Order fields in a standard sequence
+- Sort dependencies alphabetically
+- Maintain consistent line endings
+- Follow community best practices for package.json structure
+
+## Example Output
+
+```bash
+$ monoverse format
+Formatted 12 workspaces
+```
+
+## Field Ordering
+
+The formatter applies a standard field order to all package.json files:
+
+1. `name`
+2. `version`
+3. `description`
+4. `keywords`
+5. `repository`
+6. `license`
+7. `author`
+8. `main`
+9. `module`
+10. `types`
+11. `exports`
+12. `files`
+13. `scripts`
+14. `dependencies`
+15. `devDependencies`
+16. `peerDependencies`
+17. `optionalDependencies`
+
+And other fields in a consistent order.
+
+## Before and After
+
+### Before Formatting
+
+```json
+{
+  "dependencies": {
+    "react": "18.0.0",
+    "lodash": "4.17.21",
+    "axios": "1.0.0"
+  },
+  "scripts": {
+    "test": "vitest",
+    "build": "tsc"
+  },
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "license": "MIT",
+  "devDependencies": {
+    "vitest": "1.0.0",
+    "typescript": "5.0.0"
+  }
+}
+```
+
+### After Formatting
+
+```json
+{
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "axios": "1.0.0",
+    "lodash": "4.17.21",
+    "react": "18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.0.0",
+    "vitest": "1.0.0"
+  }
+}
+```
+
+## Benefits
+
+### Easier Code Review
+
+Consistent formatting makes it easier to review changes to package.json files in pull requests. You can focus on the actual changes rather than formatting differences.
+
+### Reduced Merge Conflicts
+
+When all package.json files follow the same structure and field order, merge conflicts are less likely to occur when multiple people modify dependencies.
+
+### Better Organization
+
+Alphabetically sorted dependencies make it easier to find packages and spot duplicates or missing dependencies.
+
+### Professional Appearance
+
+Consistent formatting across all workspaces gives your monorepo a polished, professional appearance.
+
+## Use Cases
+
+### Initial Setup
+
+Format all workspaces when setting up Monoverse for the first time:
+
+```bash
+monoverse format
+git add .
+git commit -m "Format all package.json files"
+```
+
+### After Dependency Changes
+
+Format after manually editing package.json files:
+
+```bash
+# Edit package.json manually
+monoverse format
+```
+
+### CI/CD Integration
+
+Verify formatting in CI:
+
+```bash
+# Run format and check if any files changed
+monoverse format
+git diff --exit-code '**/package.json'
+```
+
+### Pre-commit Hook
+
+Add to your pre-commit hook to ensure all commits have properly formatted package.json files:
+
+```bash
+#!/bin/bash
+monoverse format
+git add **/package.json
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Discover Workspaces">
+    Finds all workspaces in your monorepo by analyzing your package manager's workspace configuration.
+  </Step>
+
+  <Step title="Read package.json Files">
+    Reads the package.json file for each workspace.
+  </Step>
+
+  <Step title="Apply Formatting">
+    Applies consistent formatting rules:
+    - Reorders fields according to the standard sequence
+    - Sorts dependencies alphabetically
+    - Applies consistent indentation and line endings
+  </Step>
+
+  <Step title="Write Files">
+    Writes the formatted package.json files back to disk.
+  </Step>
+
+  <Step title="Report Results">
+    Displays the number of workspaces that were formatted.
+  </Step>
+</Steps>
+
+## Comparison with Other Commands
+
+### format vs lint
+
+- **format**: Only formats package.json files, doesn't check for other issues
+- **lint**: Checks for multiple types of issues including formatting, version mismatches, and unpinned versions
+
+### format vs fix
+
+- **format**: Only formats package.json files
+- **fix**: Formats files AND fixes other issues like unpinned versions and version mismatches
+
+## Implementation
+
+Monoverse uses the [sort-package-json](https://github.com/keithamus/sort-package-json) library to format package.json files, which follows community best practices and is widely used in the JavaScript ecosystem.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for formatting and other issues
+  </Card>
+  <Card title="fix" icon="wrench" href="/monoverse/commands/fix">
+    Format and fix multiple types of issues
+  </Card>
+  <Card title="ls" icon="list" href="/monoverse/commands/ls">
+    List all workspaces
+  </Card>
+</CardGroup>

@@ -1,0 +1,96 @@
+---
+title: 'Overview'
+description: 'React hooks for integrating Effect.TS into your React applications'
+---
+
+# use-effect-ts
+
+A collection of React hooks designed to seamlessly integrate Effect.TS effects into React components. This library provides lifecycle-aware hooks that properly manage Effect scopes, fibers, and resources within the React component lifecycle.
+
+## What is use-effect-ts?
+
+use-effect-ts bridges the gap between React's component lifecycle and Effect.TS's powerful effect system. It provides hooks that:
+
+- Automatically manage Effect scopes tied to component lifecycles
+- Handle fiber cancellation when components unmount
+- Provide different execution strategies (parallel, latest, queued)
+- Keep references synchronized with the latest values
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Lifecycle Management" icon="recycle">
+    Automatically create and close Effect scopes when components mount and unmount
+  </Card>
+  <Card title="Multiple Execution Strategies" icon="arrows-split-up-and-left">
+    Run effects in parallel, cancel previous executions, or queue them sequentially
+  </Card>
+  <Card title="Type-Safe" icon="shield-check">
+    Full TypeScript support with proper type inference for effects and errors
+  </Card>
+  <Card title="Resource Cleanup" icon="broom">
+    Automatic cleanup of fibers and resources when components unmount
+  </Card>
+</CardGroup>
+
+## Available Hooks
+
+### Execution Hooks
+
+- **[useRunEffect](/use-effect-ts/hooks/use-run-effect)** - Run effects in parallel with automatic scope management
+- **[useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest)** - Run effects, cancelling previous executions
+- **[useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue)** - Queue effects to run sequentially
+
+### Lifecycle Hooks
+
+- **[useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle)** - Run an effect when the component mounts
+- **[useComponentScope](/use-effect-ts/hooks/use-component-scope)** - Get a scope tied to the component lifecycle
+
+### Utility Hooks
+
+- **[useLiveRef](/use-effect-ts/hooks/use-live-ref)** - Create a ref that always contains the latest value
+
+## Requirements
+
+<Note>
+  use-effect-ts requires React 19.2.3 or higher and Effect.TS 3.19.14 or higher.
+</Note>
+
+- **React**: >= 19.2.3
+- **Effect**: >= 3.19.14
+
+## Quick Example
+
+```tsx
+import { useRunEffect } from 'use-effect-ts';
+import { Effect } from 'effect';
+
+function UserProfile({ userId }: { userId: string }) {
+  const [user, setUser] = useState(null);
+  
+  const fetchUser = useRunEffect((id: string) =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/users/${id}`)
+      );
+      const data = yield* Effect.tryPromise(() => response.json());
+      return data;
+    })
+  );
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      const exit = yield* fetchUser(userId);
+      if (exit._tag === 'Success') {
+        setUser(exit.value);
+      }
+    })
+  );
+
+  return <div>{user?.name}</div>;
+}
+```
+
+## Getting Started
+
+Head over to the [Installation](/use-effect-ts/installation) guide to get started with use-effect-ts in your project.
