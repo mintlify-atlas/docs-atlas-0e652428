@@ -23,7 +23,6 @@ Create a `monoverse.json` file in your project root:
 {
   "projects": [".", "../other-monorepo", "./packages/*"]
 }
-}
 ```
 
 ## Schema
@@ -105,7 +104,7 @@ Monoverse automatically detects the monorepo root and workspaces.
 Manage multiple monorepos together:
 
 **Directory Structure**:
-```
+```plaintext
 /workspace
   /frontend-monorepo
     package.json (with workspaces)
@@ -143,7 +142,7 @@ monoverse lint
 Automatically discover all monorepos in a directory:
 
 **Directory Structure**:
-```
+```plaintext
 /projects
   /client-a-monorepo
     package.json (with workspaces)
@@ -168,7 +167,7 @@ This automatically includes all matching monorepos without listing them individu
 Manage monorepos in sibling directories:
 
 **Directory Structure**:
-```
+```plaintext
 /workspace
   /config
     monoverse.json
@@ -224,7 +223,7 @@ Place `monoverse.json` at the appropriate level:
 
 ### Inside a Monorepo
 
-```
+```plaintext
 /my-monorepo
   package.json (with workspaces)
   monoverse.json
@@ -242,7 +241,7 @@ Use this to reference external monorepos from within a monorepo:
 
 ### Above Monorepos
 
-```
+```plaintext
 /workspace
   monoverse.json
   /monorepo-1

@@ -1,0 +1,67 @@
+---
+title: tui
+description: Launch the interactive terminal UI for managing your monorepo
+---
+
+Launch an interactive terminal user interface (TUI) for managing your monorepo. The TUI provides a visual way to explore workspaces, manage dependencies, and perform common operations.
+
+## Usage
+
+```bash
+monoverse tui
+```
+
+This command opens an interactive interface in your terminal where you can:
+
+- Browse all workspaces in a visual tree structure
+- View package details and dependencies
+- Perform common operations interactively
+
+## When to use
+
+The TUI is useful when you:
+
+- Want a visual overview of your entire monorepo
+- Prefer interactive navigation over command-line flags
+- Need to explore workspace relationships
+- Want to perform multiple operations in sequence
+
+## Features
+
+<AccordionGroup>
+  <Accordion title="Visual workspace explorer">
+    Navigate through your monorepo's workspace structure with an intuitive tree view showing all packages and their relationships.
+  </Accordion>
+
+  <Accordion title="Interactive operations">
+    Perform common monorepo operations like adding dependencies, running scripts, and viewing package information through guided workflows.
+  </Accordion>
+
+  <Accordion title="Real-time updates">
+    See changes to your workspace configuration reflected immediately in the interface.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The TUI requires a terminal with support for interactive interfaces. It works best in modern terminal emulators like iTerm2, Windows Terminal, or GNOME Terminal.
+</Note>
+
+## Keyboard shortcuts
+
+While in the TUI, you can use:
+
+- **Arrow keys** - Navigate through workspaces and options
+- **Enter** - Select an option or workspace
+- **Esc** or **q** - Exit the TUI
+- **?** - Show help and available commands
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="ls" icon="list" href="/monoverse/commands/ls">
+    List workspaces from the command line
+  </Card>
+  <Card title="updates" icon="arrow-up" href="/monoverse/commands/updates">
+    Check for dependency updates
+  </Card>
+</CardGroup>

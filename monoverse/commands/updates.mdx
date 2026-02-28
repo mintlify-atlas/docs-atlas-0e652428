@@ -1,0 +1,114 @@
+---
+title: updates
+description: Launch the interactive terminal UI to check and update dependencies across workspaces
+---
+
+Launch an interactive terminal interface to check for available updates to dependencies across all workspaces in your monorepo. This command provides a visual way to review and selectively update packages.
+
+## Usage
+
+```bash
+monoverse updates
+```
+
+This command opens an interactive interface where you can:
+
+- See all available dependency updates across workspaces
+- Review version changes (major, minor, patch)
+- Selectively choose which packages to update
+- Update multiple dependencies at once
+
+## How it works
+
+<Steps>
+  <Step title="Scan dependencies">
+    The command scans all workspaces in your monorepo and checks each dependency against the latest available versions in the registry.
+  </Step>
+
+  <Step title="Review updates">
+    You'll see a list of outdated dependencies with:
+    - Current version
+    - Latest version
+    - Update type (major, minor, patch)
+    - Which workspaces use each dependency
+  </Step>
+
+  <Step title="Select updates">
+    Choose which dependencies to update using the interactive interface. You can:
+    - Select individual packages
+    - Update all minor/patch versions
+    - Update all to latest
+  </Step>
+
+  <Step title="Apply updates">
+    Confirm your selections and monoverse will update the package.json files across all affected workspaces.
+  </Step>
+</Steps>
+
+## Update types
+
+The interface categorizes updates by semantic versioning:
+
+<AccordionGroup>
+  <Accordion title="Major updates" icon="exclamation-triangle">
+    Version updates that may include breaking changes (e.g., `1.0.0` → `2.0.0`). Review carefully before applying.
+  </Accordion>
+
+  <Accordion title="Minor updates" icon="arrow-up">
+    Version updates that add new features in a backward-compatible way (e.g., `1.0.0` → `1.1.0`). Generally safe to apply.
+  </Accordion>
+
+  <Accordion title="Patch updates" icon="wrench">
+    Version updates that include backward-compatible bug fixes (e.g., `1.0.0` → `1.0.1`). Safe to apply.
+  </Accordion>
+</AccordionGroup>
+
+## Best practices
+
+<Note>
+  Always review major version updates carefully. Check the package's changelog for breaking changes before applying major updates.
+</Note>
+
+<Tip>
+  Use the interactive interface to group related updates together. For example, update all testing dependencies at once to ensure compatibility.
+</Tip>
+
+<Warning>
+  After updating dependencies, run your test suite to verify that everything still works as expected, especially after major version updates.
+</Warning>
+
+## Keyboard shortcuts
+
+While in the updates interface:
+
+- **Space** - Toggle selection for a package
+- **Enter** - Apply selected updates
+- **Arrow keys** - Navigate through the list
+- **a** - Select all updates
+- **Esc** or **q** - Exit without applying updates
+
+## When to use
+
+Use the `updates` command to:
+
+- Regularly check for security updates
+- Keep dependencies up to date across your monorepo
+- Review and apply updates selectively rather than blindly updating everything
+- Ensure version consistency across workspaces
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="add" icon="plus" href="/monoverse/commands/add">
+    Add new dependencies to workspaces
+  </Card>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for version mismatches
+  </Card>
+  <Card title="fix" icon="wrench" href="/monoverse/commands/fix">
+    Auto-fix dependency issues
+  </Card>
+  <Card title="tui" icon="terminal" href="/monoverse/commands/tui">
+    Launch the interactive TUI
+  </Card>
+</CardGroup>

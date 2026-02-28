@@ -44,7 +44,9 @@
               "monoverse/commands/remove",
               "monoverse/commands/lint",
               "monoverse/commands/fix",
-              "monoverse/commands/format"
+              "monoverse/commands/format",
+              "monoverse/commands/tui",
+              "monoverse/commands/updates"
             ]
           },
           {
