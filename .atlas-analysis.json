@@ -1,0 +1,122 @@
+{
+  "projectType": "general",
+  "projectName": "pkishorez Monorepo",
+  "projectDescription": "A collection of Effect.TS based tools and libraries for monorepo management and single table design patterns.",
+  "theme": "mint",
+  "primaryColor": "#10b981",
+  "lightColor": "#34d399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": ["introduction", "getting-started"]
+          }
+        ]
+      },
+      {
+        "tab": "Monoverse",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["monoverse/overview", "monoverse/installation"]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "monoverse/commands/ls",
+              "monoverse/commands/add",
+              "monoverse/commands/remove",
+              "monoverse/commands/lint",
+              "monoverse/commands/fix",
+              "monoverse/commands/format"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["monoverse/configuration"]
+          }
+        ]
+      },
+      {
+        "tab": "STD Toolkit",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["std-toolkit/overview", "std-toolkit/concepts"]
+          },
+          {
+            "group": "Core",
+            "pages": ["std-toolkit/core/overview", "std-toolkit/core/rpc"]
+          },
+          {
+            "group": "ESchema",
+            "pages": [
+              "std-toolkit/eschema/overview",
+              "std-toolkit/eschema/getting-started",
+              "std-toolkit/eschema/evolution",
+              "std-toolkit/eschema/standard-schema",
+              "std-toolkit/eschema/api-reference"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "std-toolkit/db-sqlite/overview",
+              "std-toolkit/db-sqlite/getting-started",
+              "std-toolkit/db-sqlite/operations",
+              "std-toolkit/db-sqlite/adapters",
+              "std-toolkit/db-sqlite/transactions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "React Hooks",
+        "groups": [
+          {
+            "group": "use-effect-ts",
+            "pages": [
+              "use-effect-ts/overview",
+              "use-effect-ts/installation",
+              "use-effect-ts/hooks/use-run-effect",
+              "use-effect-ts/hooks/use-run-effect-latest",
+              "use-effect-ts/hooks/use-run-effect-queue",
+              "use-effect-ts/hooks/use-component-lifecycle",
+              "use-effect-ts/hooks/use-component-scope",
+              "use-effect-ts/hooks/use-live-ref"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Zero-config monorepo management with auto-detection",
+    "Evolving schemas with automatic version migrations",
+    "SQLite single table design with multiple adapters",
+    "React hooks for Effect.TS integration",
+    "Built-in dependency version syncing",
+    "Type-safe RPC utilities"
+  ],
+  "publicApiSurface": [
+    "monoverse ls",
+    "monoverse add <pkg>",
+    "monoverse rm <pkg>",
+    "monoverse lint",
+    "monoverse fix",
+    "monoverse format",
+    "ESchema.make(name, fields)",
+    "ESchema.evolve(version, fields, migration)",
+    "SQLiteTable.make(schema)",
+    "useRunEffect",
+    "useRunEffectLatest",
+    "useRunEffectQueue",
+    "useComponentLifecycle",
+    "useComponentScope",
+    "useLiveRef"
+  ]
+}
