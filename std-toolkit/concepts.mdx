@@ -1,0 +1,359 @@
+---
+title: Single Table Design Concepts
+description: Understanding the core patterns and principles of single table design
+---
+
+## What is Single Table Design?
+
+Single table design is a data modeling pattern where multiple entity types are stored in a single database table using composite keys. Instead of creating separate tables for Users, Posts, and Comments, you store them all in one table with a smart key structure.
+
+### Traditional Multi-Table Design
+
+```
+Users Table:        Posts Table:         Comments Table:
+├─ id (PK)         ├─ id (PK)           ├─ id (PK)
+├─ name            ├─ user_id (FK)      ├─ post_id (FK)
+└─ email           ├─ title             └─ text
+                   └─ content
+
+Requires JOINs to get related data
+```
+
+### Single Table Design
+
+```
+app_data Table:
+├─ pk (partition key)
+├─ sk (sort key)
+├─ _data (entity JSON)
+├─ _e (entity type)
+├─ _v (version)
+├─ _uid (update ID)
+├─ _d (deleted flag)
+└─ IDX1PK, IDX1SK (secondary index)
+
+All entities in one table, no JOINs needed
+```
+
+## Core Concepts
+
+### Composite Keys
+
+Every row has a **partition key (pk)** and **sort key (sk)** that together uniquely identify the item.
+
+#### Partition Key (pk)
+
+Groups related items together. Format: `EntityName#field1#field2`
+
+```typescript
+// User entity (no fields in pk)
+pk: "User"
+sk: "user-123"
+
+// Post entity (includes authorId)
+pk: "Post#author-1"
+sk: "post-456"
+
+// Comment entity (includes postId)
+pk: "Comment#post-456"
+sk: "comment-789"
+```
+
+<Tip>
+  Choose pk fields based on your most common query pattern. Related items with the same pk are stored together.
+</Tip>
+
+#### Sort Key (sk)
+
+Orders items within a partition. For primary indexes, this is typically the entity's ID field.
+
+```typescript
+// Primary index: sk is the entity ID
+pk: "User",        sk: "user-123"
+pk: "Post#author-1", sk: "post-456"
+
+// Secondary index: sk is _uid (for time-ordering)
+IDX1PK: "byEmail#alice@example.com", IDX1SK: "01HQXYZ..."
+```
+
+### Index Derivations
+
+Index derivations automatically compute pk/sk values from entity fields.
+
+```typescript
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()  // pk: "User", sk: userId
+  .index("IDX1", "byEmail", { pk: ["email"] })  // pk: "byEmail#{email}", sk: _uid
+  .build();
+```
+
+**How it works:**
+
+1. **Primary index**: Uses entity name as pk, ID field as sk
+2. **Secondary indexes**: Derive pk from specified fields, use `_uid` as sk
+3. **Timeline indexes**: Same pk as primary, but sk is `_uid` for time-ordering
+
+### Metadata Fields
+
+Every row includes automatic metadata:
+
+<ResponseField name="_v" type="string" required>
+  Schema version (e.g., "v1", "v2")
+</ResponseField>
+
+<ResponseField name="_uid" type="string" required>
+  Update ID - a ULID generated on each write, used for ordering and sync
+</ResponseField>
+
+<ResponseField name="_d" type="boolean" required>
+  Soft delete flag - `true` means the item is deleted but still in the table
+</ResponseField>
+
+<ResponseField name="_e" type="string" required>
+  Entity type name (e.g., "User", "Post")
+</ResponseField>
+
+```typescript
+const user = yield* Users.insert({ name: "Alice" });
+
+console.log(user.meta);
+// {
+//   _v: "v1",
+//   _uid: "01HQXYZ123ABC456DEF789",
+//   _d: false,
+//   _e: "User"
+// }
+```
+
+## Access Patterns
+
+### Primary Index Queries
+
+Get items by entity type and ID:
+
+```typescript
+// Get a specific user
+const user = yield* Users.get({ userId: "user-123" });
+
+// Query all users
+const allUsers = yield* Users.query("primary", {
+  pk: {},
+  sk: { ">=": null },
+});
+
+// Query posts by author
+const posts = yield* Posts.query("primary", {
+  pk: { authorId: "author-1" },
+  sk: { ">=": null },
+});
+```
+
+### Secondary Index Queries
+
+Query by other fields:
+
+```typescript
+// Find users by email
+const users = yield* Users.query("byEmail", {
+  pk: { email: "alice@example.com" },
+  sk: { ">=": null },
+});
+
+// Find comments by post (ordered by time)
+const comments = yield* Comments.query("byPost", {
+  pk: { postId: "post-456" },
+  sk: { ">=": null },
+});
+```
+
+### Timeline Index Queries
+
+Query items in chronological order:
+
+```typescript
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .timeline("IDX1")  // Same pk, but sk is _uid
+  .build();
+
+// Get latest 10 users
+const latest = yield* Users.query("timeline", {
+  pk: {},
+  sk: { "<": null },
+}, { limit: 10 });
+```
+
+## Query Operators
+
+<ParamField path="sk" type="object" required>
+  Sort key condition with operators:
+  
+  - `">"` - Greater than (ascending order)
+  - `">="` - Greater than or equal (ascending order)
+  - `"<"` - Less than (descending order)
+  - `"<="` - Less than or equal (descending order)
+</ParamField>
+
+```typescript
+// Get users created after a specific time
+const recent = yield* Users.query("timeline", {
+  pk: {},
+  sk: { ">": "01HQXYZ..." },
+});
+
+// Get the 10 most recent users
+const latest = yield* Users.query("timeline", {
+  pk: {},
+  sk: { "<": null },
+}, { limit: 10 });
+```
+
+<Note>
+  Use `null` to start from the beginning (for `>=` and `>`) or end (for `<=` and `<`) of the index.
+</Note>
+
+## Design Patterns
+
+### 1. Entity Isolation
+
+Store each entity type with its own pk prefix:
+
+```typescript
+User:    pk="User",           sk="{userId}"
+Post:    pk="Post#{authorId}", sk="{postId}"
+Comment: pk="Comment#{postId}", sk="{commentId}"
+```
+
+**Use when:** You need to query all items of a type independently.
+
+### 2. One-to-Many Relationships
+
+Store child items with parent ID in pk:
+
+```typescript
+// Posts belonging to an author
+pk: "Post#author-1", sk: "post-1"
+pk: "Post#author-1", sk: "post-2"
+pk: "Post#author-1", sk: "post-3"
+```
+
+**Query all posts by author:**
+
+```typescript
+const posts = yield* Posts.query("primary", {
+  pk: { authorId: "author-1" },
+  sk: { ">=": null },
+});
+```
+
+### 3. Many-to-Many with Secondary Indexes
+
+Use secondary indexes for reverse lookups:
+
+```typescript
+// Primary: Posts by author
+pk: "Post#author-1", sk: "post-1"
+
+// Secondary: Posts by tag
+IDX1PK: "Tag#typescript", IDX1SK: "01HQXYZ..." (_uid)
+```
+
+### 4. Time-Series Data
+
+Use timeline indexes for chronological queries:
+
+```typescript
+const Metrics = SQLiteEntity.make(table)
+  .eschema(MetricSchema)
+  .primary({ pk: ["metricType"] })  // pk: "Metric#{metricType}", sk: metricId
+  .timeline("IDX1")  // pk: "Metric#{metricType}", sk: _uid
+  .build();
+
+// Get latest CPU metrics
+const latest = yield* Metrics.query("timeline", {
+  pk: { metricType: "cpu" },
+  sk: { "<": null },
+}, { limit: 100 });
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose pk fields based on query patterns">
+    The most important decision is what goes in your pk. This determines how items are grouped together.
+
+    ```typescript
+    // Good: Group posts by author
+    .primary({ pk: ["authorId"] })
+
+    // Bad: No grouping, can't query by author
+    .primary()
+    ```
+  </Accordion>
+
+  <Accordion title="Use secondary indexes for alternative lookups">
+    Add secondary indexes for fields you'll query frequently:
+
+    ```typescript
+    const Users = SQLiteEntity.make(table)
+      .eschema(UserSchema)
+      .primary()
+      .index("IDX1", "byEmail", { pk: ["email"] })
+      .index("IDX2", "byStatus", { pk: ["status"] })
+      .build();
+    ```
+  </Accordion>
+
+  <Accordion title="Leverage soft deletes for sync">
+    Don't hard-delete. Use the `_d` flag so syncing clients can detect deletions:
+
+    ```typescript
+    // Soft delete (recommended)
+    yield* Users.delete({ userId: "user-1" });
+
+    // Hard delete (avoid)
+    yield* table.dangerouslyRemoveAllRows("i know what i am doing");
+    ```
+  </Accordion>
+
+  <Accordion title="Use _uid for time-ordering">
+    ULIDs are time-sortable and unique, perfect for chronological queries:
+
+    ```typescript
+    .timeline("IDX1")  // sk = _uid
+
+    // Query from newest to oldest
+    yield* entity.query("timeline", {
+      pk: {},
+      sk: { "<": null },
+    }, { limit: 10 });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common Pitfalls
+
+<Warning>
+  **Don't use `_` prefix for your fields** - It's reserved for metadata.
+</Warning>
+
+<Warning>
+  **Don't query without a pk** - Always specify the partition key to avoid full table scans.
+</Warning>
+
+<Warning>
+  **Don't skip soft deletes** - Hard deletes break sync functionality.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ESchema Overview" icon="diagram-project" href="/std-toolkit/eschema/overview">
+    Learn about schema versioning
+  </Card>
+  <Card title="db-sqlite Operations" icon="database" href="/std-toolkit/db-sqlite/operations">
+    Master database operations
+  </Card>
+</CardGroup>

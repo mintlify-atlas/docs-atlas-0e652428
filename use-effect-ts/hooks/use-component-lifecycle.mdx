@@ -1,0 +1,354 @@
+---
+title: 'useComponentLifecycle'
+description: 'Run Effect.TS effects when a React component mounts'
+---
+
+# useComponentLifecycle
+
+The `useComponentLifecycle` hook executes an Effect when the component mounts and automatically handles cleanup when the component unmounts. It's the Effect.TS equivalent of `useEffect` with an empty dependency array.
+
+## Signature
+
+```typescript
+function useComponentLifecycle<A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope>,
+  options?: {
+    deps?: unknown[];
+  }
+): void
+```
+
+### Parameters
+
+<ParamField path="effect" type="Effect.Effect<A, E, Scope.Scope>" required>
+  An Effect that requires a `Scope` in its context. This effect will be executed when the component mounts (or when dependencies change).
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional configuration object.
+  
+  <ParamField path="options.deps" type="unknown[]" default="[]">
+    Dependency array similar to React's `useEffect`. The effect will re-run when these dependencies change. Defaults to an empty array (run only on mount).
+  </ParamField>
+</ParamField>
+
+### Returns
+
+This hook does not return anything (`void`).
+
+## How It Works
+
+<Steps>
+  <Step title="Scope Creation">
+    When the component mounts (or dependencies change), `useComponentLifecycle` creates a new Effect `Scope`.
+  </Step>
+  
+  <Step title="Effect Execution">
+    The provided effect is extended with the scope and forked as a fiber. This allows the effect to acquire scoped resources.
+  </Step>
+  
+  <Step title="Cleanup">
+    When the component unmounts (or before re-running due to dependency changes), the fiber is interrupted and the scope is closed, releasing all acquired resources.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+function WelcomeMessage() {
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* Console.log('Component mounted!');
+      
+      // Cleanup happens automatically
+      return yield* Effect.addFinalizer(() =>
+        Console.log('Component unmounted!')
+      );
+    })
+  );
+
+  return <div>Welcome!</div>;
+}
+```
+
+## Data Fetching on Mount
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+interface User {
+  id: string;
+  name: string;
+}
+
+function UserProfile({ userId }: { userId: string }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* Console.log('Fetching user data...');
+      
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/users/${userId}`)
+      );
+      
+      const data: User = yield* Effect.tryPromise(() => response.json());
+      
+      setUser(data);
+      setLoading(false);
+      
+      yield* Console.log('User data loaded');
+    }),
+    { deps: [userId] } // Re-fetch when userId changes
+  );
+
+  if (loading) return <div>Loading...</div>;
+  if (!user) return <div>User not found</div>;
+  
+  return <div>Hello, {user.name}!</div>;
+}
+```
+
+## WebSocket Connection
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console, Queue, Stream } from 'effect';
+import { useState } from 'react';
+
+function LiveChat() {
+  const [messages, setMessages] = useState<string[]>([]);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      const ws = yield* Effect.acquireRelease(
+        Effect.sync(() => new WebSocket('ws://localhost:8080/chat')),
+        (socket) => Effect.sync(() => socket.close())
+      );
+
+      yield* Console.log('WebSocket connected');
+
+      // Set up message handler
+      yield* Effect.async<never, never, never>((resume) => {
+        ws.onmessage = (event) => {
+          setMessages(prev => [...prev, event.data]);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+        
+        ws.onclose = () => {
+          yield* Console.log('WebSocket disconnected');
+        };
+      });
+    })
+  );
+
+  return (
+    <div>
+      <h2>Live Chat</h2>
+      <ul>
+        {messages.map((msg, i) => <li key={i}>{msg}</li>)}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Interval/Polling
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console, Schedule } from 'effect';
+import { useState } from 'react';
+
+function LiveData() {
+  const [data, setData] = useState<any>(null);
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      // Poll every 5 seconds
+      yield* Effect.repeat(
+        Effect.gen(function* () {
+          yield* Console.log('Fetching latest data...');
+          
+          const response = yield* Effect.tryPromise(() =>
+            fetch('/api/data')
+          );
+          
+          const newData = yield* Effect.tryPromise(() => response.json());
+          
+          setData(newData);
+        }),
+        Schedule.fixed('5 seconds')
+      );
+    })
+  );
+
+  return <div>Data: {JSON.stringify(data)}</div>;
+}
+```
+
+## Event Listener Setup
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function MouseTracker() {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      const handleMouseMove = (e: MouseEvent) => {
+        setPosition({ x: e.clientX, y: e.clientY });
+      };
+
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          window.addEventListener('mousemove', handleMouseMove);
+          return handleMouseMove;
+        }),
+        (handler) => Effect.sync(() => {
+          window.removeEventListener('mousemove', handler);
+          yield* Console.log('Event listener removed');
+        })
+      );
+
+      yield* Console.log('Mouse tracking started');
+      
+      // Keep the effect running
+      yield* Effect.never;
+    })
+  );
+
+  return (
+    <div>
+      Mouse position: {position.x}, {position.y}
+    </div>
+  );
+}
+```
+
+## With Scoped Resources
+
+```tsx
+import { useComponentLifecycle } from 'use-effect-ts';
+import { Effect, Console, Scope } from 'effect';
+
+function DatabaseConnection() {
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      // Acquire a database connection
+      const db = yield* Effect.acquireRelease(
+        Effect.gen(function* () {
+          yield* Console.log('Opening database connection...');
+          return { query: async (sql: string) => { /* ... */ } };
+        }),
+        (connection) => Console.log('Closing database connection...')
+      );
+
+      // Use the connection
+      const result = yield* Effect.tryPromise(() =>
+        db.query('SELECT * FROM users')
+      );
+
+      yield* Console.log('Query result:', result);
+      
+      // Connection will be closed automatically on unmount
+    })
+  );
+
+  return <div>Database query executed</div>;
+}
+```
+
+## Combining with Other Hooks
+
+```tsx
+import { useComponentLifecycle, useRunEffect } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function TodoApp() {
+  const [todos, setTodos] = useState<string[]>([]);
+
+  // Initialize on mount
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* Console.log('Loading todos...');
+      
+      const response = yield* Effect.tryPromise(() =>
+        fetch('/api/todos')
+      );
+      
+      const data = yield* Effect.tryPromise(() => response.json());
+      
+      setTodos(data);
+    })
+  );
+
+  // Create effect runner for adding todos
+  const addTodo = useRunEffect((text: string) =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise(() =>
+        fetch('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify({ text }),
+        })
+      );
+      
+      const newTodo = yield* Effect.tryPromise(() => response.json());
+      
+      setTodos(prev => [...prev, newTodo]);
+    })
+  );
+
+  return (
+    <div>
+      <ul>
+        {todos.map((todo, i) => <li key={i}>{todo}</li>)}
+      </ul>
+      <button onClick={() => addTodo('New todo')}>Add Todo</button>
+    </div>
+  );
+}
+```
+
+## Important Notes
+
+<Note>
+  The effect provided to `useComponentLifecycle` must require a `Scope` in its context. This ensures that resources can be properly acquired and released.
+</Note>
+
+<Tip>
+  Use `Effect.acquireRelease` for resources that need cleanup. The release function will automatically be called when the component unmounts or the effect re-runs.
+</Tip>
+
+<Warning>
+  Similar to React's `useEffect`, be careful with the `deps` array. Omitting dependencies that are used inside the effect can lead to stale closures. Include all external values that the effect depends on.
+</Warning>
+
+## Use Cases
+
+- **Data fetching** on component mount
+- **WebSocket connections** that should last the component's lifetime
+- **Event listeners** that need cleanup
+- **Polling/intervals** that should stop on unmount
+- **Resource acquisition** with automatic cleanup
+- **Subscriptions** to external data sources
+
+## See Also
+
+- [useComponentScope](/use-effect-ts/hooks/use-component-scope) - Get a component-scoped scope manually
+- [useRunEffect](/use-effect-ts/hooks/use-run-effect) - Run effects from event handlers
+- [useLiveRef](/use-effect-ts/hooks/use-live-ref) - Keep refs synchronized with latest values
+- [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest) - Cancel previous executions

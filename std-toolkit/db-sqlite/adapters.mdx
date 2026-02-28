@@ -1,0 +1,449 @@
+---
+title: Database Adapters
+description: Configure SQLite adapters for Node.js and Cloudflare
+---
+
+## Overview
+
+Adapters provide the database implementation layer. STD Toolkit includes adapters for:
+
+- **better-sqlite3** - Synchronous SQLite for Node.js
+- **Cloudflare Durable Objects** - Built-in SQL storage for Workers
+
+## better-sqlite3 (Node.js)
+
+Use the better-sqlite3 adapter for Node.js applications.
+
+### Installation
+
+```bash
+npm install better-sqlite3 @types/better-sqlite3
+```
+
+### Setup
+
+```typescript
+import Database from "better-sqlite3";
+import { SqliteDBBetterSqlite3 } from "@std-toolkit/sqlite/adapters/better-sqlite3";
+import { Effect } from "effect";
+
+// Create database
+const db = new Database("app.db");
+
+// Create layer
+const layer = SqliteDBBetterSqlite3(db);
+
+// Use with Effect
+const program = Effect.gen(function* () {
+  yield* Users.setup();
+  yield* Users.insert({ name: "Alice", email: "alice@example.com" });
+});
+
+Effect.runPromise(program.pipe(Effect.provide(layer)));
+```
+
+### In-Memory Database
+
+Useful for testing:
+
+```typescript
+const db = new Database(":memory:");
+const layer = SqliteDBBetterSqlite3(db);
+```
+
+### File Database
+
+Persist to a file:
+
+```typescript
+const db = new Database("./data/app.db");
+const layer = SqliteDBBetterSqlite3(db);
+```
+
+### Read-Only Database
+
+```typescript
+const db = new Database("app.db", { readonly: true });
+const layer = SqliteDBBetterSqlite3(db);
+```
+
+### Database Options
+
+```typescript
+const db = new Database("app.db", {
+  verbose: console.log,  // Log all SQL statements
+  fileMustExist: false,  // Create if doesn't exist
+  timeout: 5000,         // Busy timeout (ms)
+});
+```
+
+### Closing the Database
+
+```typescript
+Effect.runPromise(
+  program.pipe(
+    Effect.provide(layer),
+    Effect.ensuring(Effect.sync(() => db.close()))
+  )
+);
+```
+
+### Complete Example
+
+```typescript server.ts
+import { ESchema } from "@std-toolkit/eschema";
+import { SQLiteTable, SQLiteEntity } from "@std-toolkit/sqlite";
+import { Schema, Effect } from "effect";
+import Database from "better-sqlite3";
+import { SqliteDBBetterSqlite3 } from "@std-toolkit/sqlite/adapters/better-sqlite3";
+
+// Schema
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+// Table and Entity
+const table = SQLiteTable.make({ tableName: "app_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .build();
+
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+// Database
+const db = new Database("./data/app.db", {
+  verbose: process.env.NODE_ENV === "development" ? console.log : undefined,
+});
+
+const layer = SqliteDBBetterSqlite3(db);
+
+// Program
+const program = Effect.gen(function* () {
+  yield* Users.setup();
+  
+  const user = yield* Users.insert({
+    userId: "user-1",
+    name: "Alice",
+    email: "alice@example.com",
+  });
+  
+  console.log("Created:", user.value.userId);
+});
+
+// Run
+Effect.runPromise(
+  program.pipe(
+    Effect.provide(layer),
+    Effect.ensuring(Effect.sync(() => db.close()))
+  )
+).catch(console.error);
+```
+
+---
+
+## Cloudflare Durable Objects
+
+Use the Durable Objects adapter for Cloudflare Workers.
+
+### Installation
+
+No additional dependencies needed - uses built-in SQL storage.
+
+```bash
+npm install @std-toolkit/sqlite @std-toolkit/eschema effect
+```
+
+### Setup
+
+```typescript
+import { SqliteDBDO } from "@std-toolkit/sqlite/adapters/do";
+import { DurableObject } from "cloudflare:workers";
+
+export class MyDurableObject extends DurableObject {
+  async fetch(request: Request) {
+    // Create layer from Durable Object SQL storage
+    const layer = SqliteDBDO(this.ctx.storage.sql);
+    
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(layer))
+    );
+    
+    return new Response(JSON.stringify(result));
+  }
+}
+```
+
+### Complete Example
+
+```typescript durable-object.ts
+import { DurableObject } from "cloudflare:workers";
+import { ESchema } from "@std-toolkit/eschema";
+import { SQLiteTable, SQLiteEntity } from "@std-toolkit/sqlite";
+import { Schema, Effect } from "effect";
+import { SqliteDBDO } from "@std-toolkit/sqlite/adapters/do";
+
+// Schema
+const TaskSchema = ESchema.make("Task", "taskId", {
+  title: Schema.String,
+  status: Schema.Literal("todo", "done"),
+}).build();
+
+// Table and Entity
+const table = SQLiteTable.make({ tableName: "tasks" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .build();
+
+const Tasks = SQLiteEntity.make(table)
+  .eschema(TaskSchema)
+  .primary()
+  .index("IDX1", "byStatus", { pk: ["status"] })
+  .build();
+
+export class TaskManager extends DurableObject {
+  async fetch(request: Request) {
+    const layer = SqliteDBDO(this.ctx.storage.sql);
+    
+    const url = new URL(request.url);
+    
+    if (url.pathname === "/tasks" && request.method === "POST") {
+      // Create task
+      const body = await request.json();
+      
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* Tasks.setup();
+          
+          const task = yield* Tasks.insert({
+            taskId: body.taskId,
+            title: body.title,
+            status: "todo",
+          });
+          
+          return task.value;
+        }).pipe(Effect.provide(layer))
+      );
+      
+      return new Response(JSON.stringify(result));
+    }
+    
+    if (url.pathname === "/tasks" && request.method === "GET") {
+      // List tasks
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const tasks = yield* Tasks.query("primary", {
+            pk: {},
+            sk: { ">=": null },
+          });
+          
+          return tasks.items.map(t => t.value);
+        }).pipe(Effect.provide(layer))
+      );
+      
+      return new Response(JSON.stringify(result));
+    }
+    
+    return new Response("Not found", { status: 404 });
+  }
+}
+```
+
+### Worker Configuration
+
+```toml wrangler.toml
+name = "my-app"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[durable_objects.bindings]]
+name = "TASK_MANAGER"
+class_name = "TaskManager"
+```
+
+### Using the Durable Object
+
+```typescript worker.ts
+export default {
+  async fetch(request: Request, env: Env) {
+    const url = new URL(request.url);
+    
+    // Get Durable Object instance
+    const id = env.TASK_MANAGER.idFromName("default");
+    const stub = env.TASK_MANAGER.get(id);
+    
+    // Forward request to Durable Object
+    return stub.fetch(request);
+  },
+};
+```
+
+---
+
+## Adapter API
+
+All adapters implement the `SqliteDB` interface:
+
+```typescript
+interface SqliteDB {
+  createTable(
+    table: string,
+    columns: string[],
+    primaryKey: string[]
+  ): Effect<void, SqliteDBError>;
+
+  addColumn(
+    table: string,
+    column: string,
+    type: string
+  ): Effect<void, SqliteDBError>;
+
+  createIndex(
+    table: string,
+    indexName: string,
+    columns: string[]
+  ): Effect<void, SqliteDBError>;
+
+  insert(
+    table: string,
+    values: Record<string, unknown>
+  ): Effect<{ rowsWritten: number }, SqliteDBError>;
+
+  update(
+    table: string,
+    values: Record<string, unknown>,
+    where: Where
+  ): Effect<{ rowsWritten: number }, SqliteDBError>;
+
+  deleteAll(
+    table: string
+  ): Effect<{ rowsDeleted: number }, SqliteDBError>;
+
+  get<T>(
+    table: string,
+    where: Where
+  ): Effect<T, SqliteDBError>;
+
+  query<T>(
+    table: string,
+    where: Where,
+    options?: QueryOptions
+  ): Effect<T[], SqliteDBError>;
+
+  begin(): Effect<void, SqliteDBError>;
+  commit(): Effect<void, SqliteDBError>;
+  rollback(): Effect<void, SqliteDBError>;
+}
+```
+
+---
+
+## Custom Adapters
+
+You can create custom adapters by implementing the `SqliteDB` interface:
+
+```typescript
+import { Layer, Effect } from "effect";
+import { SqliteDB, SqliteDBError } from "@std-toolkit/sqlite";
+
+export const CustomAdapter = (/* your db instance */) =>
+  Layer.succeed(SqliteDB, {
+    createTable: (table, columns, primaryKey) =>
+      Effect.try({
+        try: () => {
+          // Your implementation
+        },
+        catch: (cause) => SqliteDBError.createTableFailed(table, cause),
+      }),
+
+    insert: (table, values) =>
+      Effect.try({
+        try: () => {
+          // Your implementation
+          return { rowsWritten: 1 };
+        },
+        catch: (cause) => SqliteDBError.insertFailed(table, cause),
+      }),
+
+    // ... implement all other methods
+  });
+```
+
+---
+
+## Environment-Specific Configuration
+
+### Development
+
+```typescript
+const layer =
+  process.env.NODE_ENV === "development"
+    ? SqliteDBBetterSqlite3(new Database(":memory:"))
+    : SqliteDBBetterSqlite3(new Database("./data/app.db"));
+```
+
+### Testing
+
+```typescript
+import { describe, it, beforeEach } from "@effect/vitest";
+import Database from "better-sqlite3";
+
+describe("Users", () => {
+  let db: Database.Database;
+  let layer: Layer.Layer<SqliteDB>;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    layer = SqliteDBBetterSqlite3(db);
+  });
+
+  it.effect("creates a user", () =>
+    Effect.gen(function* () {
+      yield* Users.setup();
+      const user = yield* Users.insert({ name: "Test", email: "test@example.com" });
+      expect(user.value.name).toBe("Test");
+    }).pipe(Effect.provide(layer))
+  );
+});
+```
+
+### Production
+
+```typescript
+const db = new Database(process.env.DATABASE_PATH || "./data/prod.db", {
+  timeout: 10000,
+  verbose: undefined,  // No logging in production
+});
+
+const layer = SqliteDBBetterSqlite3(db);
+```
+
+---
+
+## Comparison
+
+| Feature | better-sqlite3 | Cloudflare DO |
+|---------|----------------|---------------|
+| Environment | Node.js | Cloudflare Workers |
+| Persistence | File-based | Durable storage |
+| Concurrency | Single process | Distributed |
+| Transactions | Full support | Full support |
+| Performance | Very fast | Fast |
+| Use case | Server apps | Edge apps |
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Transactions" icon="arrows-rotate" href="/std-toolkit/db-sqlite/transactions">
+    Handle transactions safely
+  </Card>
+  <Card title="Operations" icon="database" href="/std-toolkit/db-sqlite/operations">
+    Learn CRUD operations
+  </Card>
+</CardGroup>

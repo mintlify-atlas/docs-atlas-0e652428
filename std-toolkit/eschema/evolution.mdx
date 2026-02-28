@@ -1,0 +1,648 @@
+---
+title: Schema Evolution and Migrations
+description: Evolve your schemas over time with automatic migrations
+---
+
+## Why Schema Evolution?
+
+As your application grows, your data structure needs to change:
+
+- Add new required fields
+- Rename fields for clarity
+- Remove deprecated fields
+- Transform data formats
+- Combine or split fields
+
+ESchema handles these changes automatically by migrating old data to the latest version when decoded.
+
+## The evolve() Method
+
+Add a new version with `.evolve(version, delta, migration)`:
+
+```typescript
+ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",
+  }))
+  .build();
+```
+
+<ParamField path="version" type="string" required>
+  Version identifier (e.g., "v2", "v3")
+</ParamField>
+
+<ParamField path="delta" type="object" required>
+  Fields to add, modify, or remove. Use `null` to remove a field.
+</ParamField>
+
+<ParamField path="migration" type="function" required>
+  Function to transform data from the previous version
+</ParamField>
+
+## Migration Patterns
+
+### Adding Fields
+
+Add new fields with default values:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: "unknown@example.com",  // Default for v1 users
+  }))
+  .evolve("v3", { verified: Schema.Boolean }, (prev) => ({
+    ...prev,
+    verified: false,  // Default for v2 users
+  }))
+  .build();
+
+// v1 data automatically migrates: v1 → v2 → v3
+const user = yield* UserSchema.decode({
+  _v: "v1",
+  userId: "user-1",
+  name: "Alice",
+});
+
+// Result: { userId: "user-1", name: "Alice", email: "unknown@example.com", verified: false }
+```
+
+### Removing Fields
+
+Use `null` to remove fields from the schema:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  firstName: Schema.String,
+  lastName: Schema.String,
+  nickname: Schema.String,
+})
+  .evolve(
+    "v2",
+    { nickname: null },  // Remove nickname field
+    (prev) => ({
+      userId: prev.userId,
+      firstName: prev.firstName,
+      lastName: prev.lastName,
+      // nickname is omitted
+    })
+  )
+  .build();
+```
+
+<Warning>
+  Removed fields must be explicitly excluded from the migration function.
+</Warning>
+
+### Renaming Fields
+
+Remove the old field and add the new one:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  username: Schema.String,
+})
+  .evolve(
+    "v2",
+    {
+      username: null,      // Remove old field
+      email: Schema.String,  // Add new field
+    },
+    (prev) => ({
+      userId: prev.userId,
+      email: prev.username,  // Copy value to new field
+    })
+  )
+  .build();
+```
+
+### Combining Fields
+
+Merge multiple fields into one:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  firstName: Schema.String,
+  lastName: Schema.String,
+})
+  .evolve(
+    "v2",
+    {
+      firstName: null,
+      lastName: null,
+      fullName: Schema.String,
+    },
+    (prev) => ({
+      userId: prev.userId,
+      fullName: `${prev.firstName} ${prev.lastName}`,
+    })
+  )
+  .build();
+```
+
+### Splitting Fields
+
+Split one field into multiple:
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  fullName: Schema.String,
+})
+  .evolve(
+    "v2",
+    {
+      fullName: null,
+      firstName: Schema.String,
+      lastName: Schema.String,
+    },
+    (prev) => {
+      const [firstName, ...rest] = prev.fullName.split(" ");
+      const lastName = rest.join(" ");
+      return {
+        userId: prev.userId,
+        firstName: firstName || "",
+        lastName: lastName || "",
+      };
+    }
+  )
+  .build();
+```
+
+### Changing Field Types
+
+Transform data to a new type:
+
+```typescript
+const ArticleSchema = ESchema.make("Article", "articleId", {
+  tags: Schema.String,  // Comma-separated string
+})
+  .evolve(
+    "v2",
+    { tags: Schema.Array(Schema.String) },  // Array
+    (prev) => ({
+      articleId: prev.articleId,
+      tags: prev.tags.split(",").map(t => t.trim()),
+    })
+  )
+  .build();
+```
+
+### Nested Object Migrations
+
+Migrate nested structures:
+
+```typescript
+const OrderSchema = ESchema.make("Order", "orderId", {
+  total: Schema.Number,
+})
+  .evolve(
+    "v2",
+    {
+      total: null,
+      pricing: Schema.Struct({
+        subtotal: Schema.Number,
+        tax: Schema.Number,
+        total: Schema.Number,
+      }),
+    },
+    (prev) => ({
+      orderId: prev.orderId,
+      pricing: {
+        subtotal: prev.total * 0.9,  // Assume 10% tax
+        tax: prev.total * 0.1,
+        total: prev.total,
+      },
+    })
+  )
+  .build();
+```
+
+## Multi-Version Migrations
+
+Migrations run sequentially from the data's version to the latest:
+
+```typescript
+const ProductSchema = ESchema.make("Product", "productId", {
+  name: Schema.String,
+  price: Schema.Number,  // In cents
+})
+  .evolve("v2", { category: Schema.String }, (prev) => ({
+    ...prev,
+    category: "uncategorized",
+  }))
+  .evolve(
+    "v3",
+    { price: Schema.Number },  // Now in dollars
+    (prev) => ({
+      ...prev,
+      price: prev.price / 100,  // Convert cents to dollars
+    })
+  )
+  .build();
+
+// v1 data: { _v: "v1", productId: "p1", name: "Widget", price: 1999 }
+// Migration path: v1 → v2 → v3
+//   v1 → v2: Add category
+//   v2 → v3: Convert price
+// Final: { productId: "p1", name: "Widget", price: 19.99, category: "uncategorized" }
+```
+
+<Note>
+  Each migration only receives data from the **previous** version, not the original v1.
+</Note>
+
+## Migration Strategies
+
+### Strategy 1: Additive Only
+
+Only add fields, never remove or rename:
+
+```typescript
+// v1
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+})
+  // v2: Add email
+  .evolve("v2", { email: Schema.optional(Schema.String) }, (prev) => prev)
+  // v3: Add verified
+  .evolve("v3", { verified: Schema.optional(Schema.Boolean) }, (prev) => prev)
+  .build();
+```
+
+**Pros:**
+- Simple migrations (just spread `prev`)
+- No data loss
+
+**Cons:**
+- Schema grows over time
+- Old fields remain forever
+
+### Strategy 2: Deprecation Period
+
+Mark fields as deprecated before removing:
+
+```typescript
+// v1: username field
+// v2: Add email, keep username
+const UserSchema = ESchema.make("User", "userId", {
+  username: Schema.String,
+})
+  .evolve("v2", { email: Schema.String }, (prev) => ({
+    ...prev,
+    email: prev.username,  // Duplicate to email
+  }))
+  // v3: Remove username after migration period
+  .evolve(
+    "v3",
+    { username: null },
+    (prev) => ({
+      userId: prev.userId,
+      email: prev.email,
+    })
+  )
+  .build();
+```
+
+**Pros:**
+- Clean schema
+- Gradual transition
+
+**Cons:**
+- Requires coordination
+- Temporary duplication
+
+### Strategy 3: Version Bumps for Breaking Changes
+
+Use major version numbers for breaking changes:
+
+```typescript
+// v1.0, v1.1: Minor changes (additive)
+// v2.0: Breaking change (rename/remove)
+
+const Schema = ESchema.make("User", "userId", { name: Schema.String })
+  .evolve("v1.1", { email: Schema.optional(Schema.String) }, (prev) => prev)
+  .evolve(
+    "v2.0",
+    { name: null, fullName: Schema.String },
+    (prev) => ({
+      userId: prev.userId,
+      fullName: prev.name,
+      email: prev.email,
+    })
+  )
+  .build();
+```
+
+## Complex Examples
+
+### E-commerce Product Evolution
+
+```typescript
+const ProductSchema = ESchema.make("Product", "productId", {
+  title: Schema.String,
+  price: Schema.Number,  // Single price
+})
+  // v2: Add inventory tracking
+  .evolve("v2", { inventory: Schema.Number }, (prev) => ({
+    ...prev,
+    inventory: 0,  // Assume out of stock for old products
+  }))
+  // v3: Support multiple currencies
+  .evolve(
+    "v3",
+    {
+      price: null,
+      pricing: Schema.Struct({
+        amount: Schema.Number,
+        currency: Schema.String,
+      }),
+    },
+    (prev) => ({
+      productId: prev.productId,
+      title: prev.title,
+      inventory: prev.inventory,
+      pricing: {
+        amount: prev.price,
+        currency: "USD",  // Default currency
+      },
+    })
+  )
+  // v4: Add variants (size, color, etc.)
+  .evolve(
+    "v4",
+    {
+      variants: Schema.Array(
+        Schema.Struct({
+          sku: Schema.String,
+          name: Schema.String,
+          inventory: Schema.Number,
+        })
+      ),
+      inventory: null,  // Move to variants
+    },
+    (prev) => ({
+      productId: prev.productId,
+      title: prev.title,
+      pricing: prev.pricing,
+      variants: [
+        {
+          sku: `${prev.productId}-default`,
+          name: "Default",
+          inventory: prev.inventory,
+        },
+      ],
+    })
+  )
+  .build();
+```
+
+### User Profile with Privacy Settings
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+})
+  // v2: Add optional bio
+  .evolve("v2", { bio: Schema.optional(Schema.String) }, (prev) => prev)
+  // v3: Add privacy settings
+  .evolve(
+    "v3",
+    {
+      privacy: Schema.Struct({
+        emailVisible: Schema.Boolean,
+        bioVisible: Schema.Boolean,
+      }),
+    },
+    (prev) => ({
+      ...prev,
+      privacy: {
+        emailVisible: false,  // Default to private
+        bioVisible: true,
+      },
+    })
+  )
+  // v4: Flatten privacy into top-level fields
+  .evolve(
+    "v4",
+    {
+      privacy: null,
+      emailVisible: Schema.Boolean,
+      bioVisible: Schema.Boolean,
+    },
+    (prev) => ({
+      userId: prev.userId,
+      name: prev.name,
+      email: prev.email,
+      bio: prev.bio,
+      emailVisible: prev.privacy.emailVisible,
+      bioVisible: prev.privacy.bioVisible,
+    })
+  )
+  .build();
+```
+
+## Testing Migrations
+
+Test each migration path:
+
+```typescript
+import { describe, it, expect } from "@effect/vitest";
+import { Effect } from "effect";
+
+describe("UserSchema migrations", () => {
+  it.effect("migrates v1 to v3", () =>
+    Effect.gen(function* () {
+      const v1Data = {
+        _v: "v1",
+        userId: "user-1",
+        name: "Alice",
+      };
+
+      const result = yield* UserSchema.decode(v1Data);
+
+      expect(result).toEqual({
+        userId: "user-1",
+        name: "Alice",
+        email: "unknown@example.com",
+        verified: false,
+      });
+    })
+  );
+
+  it.effect("migrates v2 to v3", () =>
+    Effect.gen(function* () {
+      const v2Data = {
+        _v: "v2",
+        userId: "user-1",
+        name: "Alice",
+        email: "alice@example.com",
+      };
+
+      const result = yield* UserSchema.decode(v2Data);
+
+      expect(result).toEqual({
+        userId: "user-1",
+        name: "Alice",
+        email: "alice@example.com",
+        verified: false,
+      });
+    })
+  );
+
+  it.effect("does not migrate v3", () =>
+    Effect.gen(function* () {
+      const v3Data = {
+        _v: "v3",
+        userId: "user-1",
+        name: "Alice",
+        email: "alice@example.com",
+        verified: true,
+      };
+
+      const result = yield* UserSchema.decode(v3Data);
+
+      expect(result).toEqual(v3Data);
+    })
+  );
+});
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always provide default values">
+    When adding required fields, provide sensible defaults:
+
+    ```typescript
+    // Good
+    .evolve("v2", { status: Schema.String }, (prev) => ({
+      ...prev,
+      status: "active",  // Reasonable default
+    }))
+
+    // Avoid
+    .evolve("v2", { status: Schema.String }, (prev) => ({
+      ...prev,
+      status: "",  // Empty string might be invalid
+    }))
+    ```
+  </Accordion>
+
+  <Accordion title="Keep migrations simple">
+    Avoid complex logic in migrations:
+
+    ```typescript
+    // Good: Simple transformation
+    .evolve("v2", { fullName: Schema.String }, (prev) => ({
+      ...prev,
+      fullName: `${prev.firstName} ${prev.lastName}`,
+    }))
+
+    // Avoid: Complex business logic
+    .evolve("v2", { score: Schema.Number }, (prev) => ({
+      ...prev,
+      score: calculateComplexScore(prev),  // Hard to debug
+    }))
+    ```
+  </Accordion>
+
+  <Accordion title="Document migration reasons">
+    Add comments explaining why fields changed:
+
+    ```typescript
+    .evolve(
+      "v2",
+      { email: null, username: Schema.String },
+      // Renamed email to username to match auth system
+      (prev) => ({
+        userId: prev.userId,
+        username: prev.email,
+      })
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Test all migration paths">
+    Write tests for every version transition:
+
+    ```typescript
+    // Test v1 → v4
+    // Test v2 → v4
+    // Test v3 → v4
+    // Test v4 (no migration)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common Pitfalls
+
+<Warning>
+  **Don't forget the ID field** - It's auto-included in migrations.
+</Warning>
+
+```typescript
+// ❌ Wrong: Missing userId
+.evolve("v2", { email: null }, (prev) => ({
+  name: prev.name,
+}))
+
+// ✅ Correct: Include userId
+.evolve("v2", { email: null }, (prev) => ({
+  userId: prev.userId,
+  name: prev.name,
+}))
+```
+
+<Warning>
+  **Don't mutate the prev object** - Return a new object.
+</Warning>
+
+```typescript
+// ❌ Wrong: Mutation
+.evolve("v2", { email: Schema.String }, (prev) => {
+  prev.email = "unknown@example.com";
+  return prev;
+})
+
+// ✅ Correct: New object
+.evolve("v2", { email: Schema.String }, (prev) => ({
+  ...prev,
+  email: "unknown@example.com",
+}))
+```
+
+<Warning>
+  **Don't skip versions** - Each migration only handles the previous version.
+</Warning>
+
+```typescript
+// ❌ Wrong: Migration expects v2 fields to exist
+.evolve("v3", { fullName: Schema.String }, (prev) => ({
+  ...prev,
+  fullName: `${prev.firstName} ${prev.lastName}`,  // v1 doesn't have these
+}))
+
+// ✅ Correct: Add fields in v2, combine in v3
+.evolve("v2", { firstName: Schema.String, lastName: Schema.String }, ...)
+.evolve("v3", { fullName: Schema.String }, (prev) => ({
+  ...prev,
+  fullName: `${prev.firstName} ${prev.lastName}`,
+}))
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Standard Schema Support" icon="standard" href="/std-toolkit/eschema/standard-schema">
+    Use ESchema with form libraries
+  </Card>
+  <Card title="API Reference" icon="book" href="/std-toolkit/eschema/api-reference">
+    Explore all ESchema methods
+  </Card>
+</CardGroup>

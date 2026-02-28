@@ -1,0 +1,141 @@
+---
+title: remove (rm)
+description: Remove a dependency from the current workspace
+---
+
+The `rm` command removes a dependency from the current workspace's `package.json`.
+
+## Usage
+
+```bash
+monoverse rm <package>
+```
+
+This command must be run from within a workspace directory.
+
+## Arguments
+
+<ParamField path="package" type="string" required>
+  The name of the package to remove (e.g., `lodash`, `react`, `@types/node`)
+</ParamField>
+
+## Examples
+
+### Remove a Package
+
+```bash
+monoverse rm lodash
+```
+
+Removes `lodash` from the current workspace's `package.json`.
+
+### Remove a Scoped Package
+
+```bash
+monoverse rm @types/node
+```
+
+Removes the scoped package `@types/node` from the current workspace.
+
+### Remove Multiple Packages
+
+```bash
+monoverse rm lodash
+monoverse rm moment
+monoverse rm axios
+```
+
+Run the command multiple times to remove multiple packages.
+
+## How It Works
+
+<Steps>
+  <Step title="Detect Current Workspace">
+    Monoverse identifies which workspace you're currently in based on your working directory.
+  </Step>
+
+  <Step title="Find Dependency">
+    Searches for the package in all dependency sections of the workspace's `package.json`:
+    - `dependencies`
+    - `devDependencies`
+    - `peerDependencies`
+    - `optionalDependencies`
+  </Step>
+
+  <Step title="Remove from package.json">
+    Removes the dependency from the appropriate section in the workspace's `package.json`.
+  </Step>
+
+  <Step title="Clean Up">
+    Run your package manager's install command to remove the package from node_modules:
+    
+    ```bash
+    npm install  # or yarn, pnpm, bun
+    ```
+  </Step>
+</Steps>
+
+## Behavior
+
+### Dependency Type Detection
+
+The command automatically detects which dependency section contains the package and removes it from the correct location. You don't need to specify whether it's a regular dependency, dev dependency, etc.
+
+### Package Not Found
+
+If the package is not found in the workspace's `package.json`, the command will still complete without error.
+
+## Error Handling
+
+### Not in a Workspace
+
+If you run the command outside of a workspace directory:
+
+```
+Error: Not inside a workspace. Navigate to a workspace directory first.
+```
+
+## Example Output
+
+```bash
+$ monoverse rm lodash
+Removed lodash from @acme/ui
+```
+
+## Use Cases
+
+### Cleaning Up Unused Dependencies
+
+Remove packages that are no longer used in your workspace:
+
+```bash
+monoverse rm unused-package
+```
+
+### Replacing Dependencies
+
+Remove an old package before adding a replacement:
+
+```bash
+monoverse rm moment
+monoverse add dayjs
+```
+
+### Removing Dev Dependencies
+
+The command works the same for all dependency types:
+
+```bash
+monoverse rm jest
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="add" icon="plus" href="/monoverse/commands/add">
+    Add a dependency to the current workspace
+  </Card>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for issues across workspaces
+  </Card>
+</CardGroup>

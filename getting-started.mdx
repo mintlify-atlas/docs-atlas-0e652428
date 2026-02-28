@@ -1,0 +1,341 @@
+---
+title: Getting started
+description: Quick start guide for the pkishorez monorepo packages
+---
+
+## Choose your package
+
+This monorepo contains multiple independent packages. Select the one that matches your needs:
+
+<CardGroup cols={2}>
+  <Card title="monoverse" icon="cube">
+    Monorepo management
+  </Card>
+  <Card title="use-effect-ts" icon="react">
+    React hooks for Effect
+  </Card>
+  <Card title="eschema" icon="database">
+    Evolving schemas
+  </Card>
+  <Card title="db-sqlite" icon="table">
+    SQLite single table design
+  </Card>
+</CardGroup>
+
+## Quick start
+
+<Tabs>
+  <Tab title="monoverse">
+    ### Installation
+
+    <Note>
+      [Bun](https://bun.sh) is required to run monoverse.
+    </Note>
+
+    ```bash
+    npm install -g monoverse
+    ```
+
+    ### Basic usage
+
+    Monoverse works out of the box with any monorepo. No configuration needed.
+
+    <Steps>
+      <Step title="List all workspaces">
+        Run this command from anywhere in your monorepo:
+
+        ```bash
+        monoverse ls
+        ```
+
+        You'll see a tree structure of all your workspaces:
+
+        ```
+        Workspaces (12)
+
+        my-monorepo
+        ├── apps
+        │   ├── web (web)
+        │   └── mobile (mobile)
+        └── packages
+            ├── ui (@acme/ui)
+            └── utils (@acme/utils) (cwd)
+        ```
+      </Step>
+
+      <Step title="Add a dependency">
+        Navigate to a workspace and add dependencies:
+
+        ```bash
+        cd packages/ui
+        monoverse add lodash
+        ```
+
+        Monoverse automatically syncs to existing versions in other workspaces when available.
+      </Step>
+
+      <Step title="Check for issues">
+        Detect version mismatches and formatting issues:
+
+        ```bash
+        monoverse lint
+        ```
+
+        Then auto-fix them:
+
+        ```bash
+        monoverse fix
+        ```
+      </Step>
+    </Steps>
+
+    ### Next steps
+
+    - Learn about [adding dependencies](/monoverse/commands/add)
+    - Explore [linting and fixing](/monoverse/commands/lint)
+    - Set up [advanced configuration](/monoverse/configuration)
+  </Tab>
+
+  <Tab title="use-effect-ts">
+    ### Installation
+
+    ```bash
+    npm install use-effect-ts effect react
+    ```
+
+    ### Basic usage
+
+    Run Effects from React event handlers:
+
+    ```tsx
+    import { Effect } from 'effect';
+    import { useRunEffect } from 'use-effect-ts';
+
+    function MyComponent() {
+      const runEffect = useRunEffect((userId: string) =>
+        Effect.gen(function* () {
+          const user = yield* fetchUser(userId);
+          const posts = yield* fetchPosts(userId);
+          return { user, posts };
+        })
+      );
+
+      const handleClick = async () => {
+        const exit = await runEffect('user-123');
+        if (exit._tag === 'Success') {
+          console.log(exit.value);
+        }
+      };
+
+      return <button onClick={handleClick}>Load User</button>;
+    }
+    ```
+
+    ### Component lifecycle
+
+    Run Effects when components mount or unmount:
+
+    ```tsx
+    import { useComponentLifecycle } from 'use-effect-ts';
+
+    function MyComponent() {
+      useComponentLifecycle({
+        onMount: Effect.gen(function* () {
+          console.log('Component mounted');
+          yield* initializeService();
+        }),
+        onUnmount: Effect.gen(function* () {
+          console.log('Component unmounting');
+          yield* cleanupService();
+        }),
+      });
+
+      return <div>My Component</div>;
+    }
+    ```
+
+    ### Next steps
+
+    - Explore all [available hooks](/use-effect-ts/overview)
+    - Learn about [useComponentScope](/use-effect-ts/hooks/use-component-scope)
+    - See the [useRunEffectQueue hook](/use-effect-ts/hooks/use-run-effect-queue)
+  </Tab>
+
+  <Tab title="eschema">
+    ### Installation
+
+    ```bash
+    npm install @std-toolkit/eschema effect
+    ```
+
+    ### Basic usage
+
+    <Steps>
+      <Step title="Define a schema">
+        Create a schema with Effect Schema:
+
+        ```typescript
+        import { Effect, Schema } from 'effect';
+        import { ESchema } from '@std-toolkit/eschema';
+
+        const UserSchema = ESchema.make('User', {
+          name: Schema.String,
+          email: Schema.String,
+        }).build();
+        ```
+      </Step>
+
+      <Step title="Encode and decode">
+        All operations return Effects:
+
+        ```typescript
+        const program = Effect.gen(function* () {
+          // Encode adds version metadata
+          const { data, meta } = yield* UserSchema.encode({
+            name: 'Alice',
+            email: 'alice@example.com',
+          });
+          // meta: { _v: "v1", _e: "User" }
+
+          // Decode validates and migrates
+          const decoded = yield* UserSchema.decode(data);
+          console.log(decoded.data);
+        });
+
+        Effect.runPromise(program);
+        ```
+      </Step>
+
+      <Step title="Evolve the schema">
+        Add new versions with automatic migrations:
+
+        ```typescript
+        const UserSchema = ESchema.make('User', {
+          name: Schema.String,
+        })
+          .evolve('v2', 
+            { name: Schema.String, email: Schema.String },
+            (prev) => ({ ...prev, email: 'unknown@example.com' })
+          )
+          .evolve('v3',
+            { name: Schema.String, email: Schema.String, verified: Schema.Boolean },
+            (prev) => ({ ...prev, verified: false })
+          )
+          .build();
+
+        // Old v1 data automatically migrates through v2 → v3
+        ```
+      </Step>
+    </Steps>
+
+    ### Next steps
+
+    - Learn about [schema evolution](/std-toolkit/eschema/evolution)
+    - Explore the [API reference](/std-toolkit/eschema/api-reference)
+    - See [Standard Schema support](/std-toolkit/eschema/standard-schema)
+  </Tab>
+
+  <Tab title="db-sqlite">
+    ### Installation
+
+    ```bash
+    npm install @std-toolkit/sqlite @std-toolkit/eschema effect
+    npm install better-sqlite3  # for Node.js
+    ```
+
+    ### Basic usage
+
+    <Steps>
+      <Step title="Define a schema">
+        ```typescript
+        import { ESchema } from '@std-toolkit/eschema';
+        import { Schema } from 'effect';
+
+        const UserSchema = ESchema.make('User', {
+          id: Schema.String,
+          email: Schema.String,
+          name: Schema.String,
+          status: Schema.Literal('active', 'inactive'),
+        }).build();
+        ```
+      </Step>
+
+      <Step title="Create a table">
+        ```typescript
+        import { SQLiteTable } from '@std-toolkit/sqlite/table';
+
+        const UsersTable = SQLiteTable.make(UserSchema)
+          .primary(['id'])
+          .index('byEmail', ['email'])
+          .index('byStatus', ['status', '_u'])
+          .build();
+        ```
+      </Step>
+
+      <Step title="Set up the database">
+        ```typescript
+        import Database from 'better-sqlite3';
+        import { SqliteDBBetterSqlite3 } from '@std-toolkit/sqlite/adapters/better-sqlite3';
+        import { Effect } from 'effect';
+
+        const db = new Database('data.db');
+        const layer = SqliteDBBetterSqlite3(db);
+
+        const program = Effect.gen(function* () {
+          // Create table and indexes
+          yield* UsersTable.setup();
+
+          // Insert a user
+          yield* UsersTable.insert({
+            id: 'user-1',
+            email: 'alice@example.com',
+            name: 'Alice',
+            status: 'active',
+          });
+
+          // Query by primary key
+          const user = yield* UsersTable.get({ id: 'user-1' });
+          console.log(user.data.name); // "Alice"
+
+          // Query by index
+          const activeUsers = yield* UsersTable.query(
+            'byStatus',
+            { '>=': { status: 'active' } },
+            { limit: 10 }
+          );
+        });
+
+        Effect.runPromise(program.pipe(Effect.provide(layer)));
+        ```
+      </Step>
+    </Steps>
+
+    ### Next steps
+
+    - Learn about [database operations](/std-toolkit/db-sqlite/operations)
+    - Use [transactions](/std-toolkit/db-sqlite/transactions)
+    - Explore [database adapters](/std-toolkit/db-sqlite/adapters)
+  </Tab>
+</Tabs>
+
+## Common prerequisites
+
+All packages in this monorepo are built with [Effect](https://effect.website). You'll get the most value if you're familiar with:
+
+- **TypeScript**: All packages are written in TypeScript with full type safety
+- **Effect**: The foundational library for composable, type-safe error handling
+- **Node.js**: Required for monoverse and db-sqlite (Bun also supported)
+
+<Note>
+  New to Effect? Start with the [Effect documentation](https://effect.website/docs/introduction) to learn the fundamentals.
+</Note>
+
+## Support
+
+Each package has its own documentation section with detailed guides, API references, and examples. Navigate using the sidebar to find what you need.
+
+For issues or questions:
+
+- Check the relevant package documentation
+- Review the source code examples
+- Open an issue on [GitHub](https://github.com/pkishorez/monorepo)

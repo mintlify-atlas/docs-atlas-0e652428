@@ -1,0 +1,202 @@
+---
+title: lint
+description: Check for issues across all workspaces
+---
+
+The `lint` command checks for common issues across all workspaces in your monorepo. It runs validation rules and reports any violations found.
+
+## Usage
+
+```bash
+monoverse lint
+```
+
+Run this command from anywhere within your monorepo.
+
+## What It Detects
+
+### Version Mismatches
+
+Detects when the same package is used with different versions across workspaces:
+
+```
+my-monorepo
+└── packages
+    ├── ui (@acme/ui)
+    │   └── lodash VersionMismatch (4.17.21, 4.17.19)
+    └── utils (@acme/utils)
+        └── lodash VersionMismatch (4.17.21, 4.17.19)
+```
+
+### Unpinned Versions
+
+Detects dependencies using range specifiers like `^` or `~` instead of exact versions:
+
+```
+my-monorepo
+└── packages
+    └── ui (@acme/ui)
+        └── react UnpinnedVersion (^18.0.0)
+```
+
+### Unformatted package.json Files
+
+Detects package.json files that don't follow the standard formatting:
+
+```
+my-monorepo
+└── packages
+    └── ui (@acme/ui)
+        └── FormatPackageJson
+```
+
+### Duplicate Workspace Names
+
+Detects when multiple workspaces have the same name (from the `name` field in package.json):
+
+```
+my-monorepo
+└── packages
+    └── ui (@acme/ui)
+        └── DuplicateWorkspace (packages/ui, apps/ui)
+```
+
+## Example Output
+
+### No Issues Found
+
+```bash
+$ monoverse lint
+No issues found
+```
+
+### Issues Found
+
+```bash
+$ monoverse lint
+Found 5 issues
+
+my-monorepo
+├── apps
+│   └── web (web)
+│       ├── lodash VersionMismatch (4.17.21, 4.17.19)
+│       └── react UnpinnedVersion (^18.0.0)
+└── packages
+    ├── ui (@acme/ui)
+    │   ├── lodash VersionMismatch (4.17.21, 4.17.19)
+    │   └── FormatPackageJson
+    └── utils (@acme/utils)
+        └── lodash VersionMismatch (4.17.21, 4.17.19)
+```
+
+## Exit Codes
+
+- **0**: No issues found
+- **1**: Issues found
+
+This makes `lint` suitable for use in CI/CD pipelines:
+
+```yaml
+# GitHub Actions example
+- name: Lint monorepo
+  run: monoverse lint
+```
+
+## Use Cases
+
+### Pre-commit Checks
+
+Run `lint` before committing to catch issues early:
+
+```bash
+monoverse lint && git commit -m "Add feature"
+```
+
+### CI/CD Integration
+
+Add `lint` to your CI pipeline to enforce consistency:
+
+```yaml
+steps:
+  - name: Install Monoverse
+    run: npm install -g monoverse
+  
+  - name: Lint monorepo
+    run: monoverse lint
+```
+
+### Regular Maintenance
+
+Run `lint` periodically to catch issues that accumulate over time:
+
+```bash
+monoverse lint
+```
+
+## Validation Rules
+
+### Version Mismatch
+
+**What it checks**: The same npm package is used with different versions across workspaces.
+
+**Why it matters**: Version mismatches can lead to:
+- Larger bundle sizes (multiple versions bundled)
+- Runtime errors due to API differences
+- Type errors in TypeScript projects
+- Inconsistent behavior across workspaces
+
+**Example**:
+```
+Workspace A: lodash@4.17.21
+Workspace B: lodash@4.17.19
+```
+
+### Unpinned Versions
+
+**What it checks**: Dependencies using range specifiers (`^`, `~`) instead of exact versions.
+
+**Why it matters**: Unpinned versions can cause:
+- Non-deterministic builds
+- Different developers getting different versions
+- CI/CD failures due to unexpected updates
+- Hard-to-reproduce bugs
+
+**Example**:
+```
+"react": "^18.0.0"  ❌ Unpinned
+"react": "18.0.0"   ✅ Pinned
+```
+
+### Format package.json
+
+**What it checks**: package.json files follow a consistent format and field order.
+
+**Why it matters**:
+- Easier to read and review changes
+- Reduces merge conflicts
+- Maintains consistency across workspaces
+- Professional code organization
+
+### Duplicate Workspace
+
+**What it checks**: Multiple workspaces have the same `name` field in package.json.
+
+**Why it matters**: Duplicate names can cause:
+- Package manager confusion
+- Build failures
+- Import resolution errors
+- Workspace linking issues
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="fix" icon="wrench" href="/monoverse/commands/fix">
+    Auto-fix detected issues
+  </Card>
+  <Card title="format" icon="paintbrush" href="/monoverse/commands/format">
+    Format all package.json files
+  </Card>
+  <Card title="ls" icon="list" href="/monoverse/commands/ls">
+    List all workspaces
+  </Card>
+</CardGroup>

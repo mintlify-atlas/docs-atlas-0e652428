@@ -1,0 +1,207 @@
+---
+title: 'useRunEffect'
+description: 'Run Effect.TS effects in parallel with automatic scope management'
+---
+
+# useRunEffect
+
+The `useRunEffect` hook creates a function that executes Effect.TS effects in parallel, managing fibers within a component-scoped `FiberSet`. Each invocation runs concurrently, and all fibers are automatically cleaned up when the component unmounts.
+
+## Signature
+
+```typescript
+function useRunEffect<Args extends any[], A, E>(
+  fn: (...args: Args) => Effect.Effect<A, E, never>
+): (...args: Args) => Promise<Exit<A, E>>
+```
+
+### Parameters
+
+<ParamField path="fn" type="(...args: Args) => Effect.Effect<A, E, never>" required>
+  A function that takes arguments and returns an Effect. The effect should not require any context (the `R` type parameter must be `never`).
+</ParamField>
+
+### Returns
+
+Returns a function with the same signature as `fn` that:
+- Executes the effect within a managed `FiberSet`
+- Returns a `Promise<Exit<A, E>>` representing the effect's result
+- Allows multiple concurrent executions
+- Automatically cleans up all fibers when the component unmounts
+
+## How It Works
+
+<Steps>
+  <Step title="Scope Initialization">
+    On component mount, `useRunEffect` creates a component-scoped `FiberSet` using `useComponentScope`.
+  </Step>
+  
+  <Step title="Effect Execution">
+    When you call the returned function, it runs the effect as a fiber within the `FiberSet`, allowing parallel execution.
+  </Step>
+  
+  <Step title="Automatic Cleanup">
+    When the component unmounts, all running fibers in the set are automatically interrupted and cleaned up.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useRunEffect } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+import { useState } from 'react';
+
+function SearchComponent() {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const search = useRunEffect((query: string) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Searching for: ${query}`);
+      
+      const response = yield* Effect.tryPromise(() =>
+        fetch(`/api/search?q=${query}`)
+      );
+      
+      const data = yield* Effect.tryPromise(() => response.json());
+      
+      return data.results;
+    })
+  );
+
+  const handleSearch = async (query: string) => {
+    setLoading(true);
+    const exit = await search(query);
+    
+    if (exit._tag === 'Success') {
+      setResults(exit.value);
+    } else {
+      console.error('Search failed:', exit.cause);
+    }
+    
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <input onChange={(e) => handleSearch(e.target.value)} />
+      {loading && <div>Loading...</div>}
+      <ul>
+        {results.map(result => <li key={result.id}>{result.title}</li>)}
+      </ul>
+    </div>
+  );
+}
+```
+
+## Parallel Execution Example
+
+```tsx
+import { useRunEffect } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+function DataFetcher() {
+  const fetchData = useRunEffect((id: number) =>
+    Effect.gen(function* () {
+      yield* Console.log(`Fetching data for ID: ${id}`);
+      yield* Effect.sleep('2 seconds');
+      yield* Console.log(`Completed fetching ID: ${id}`);
+      return { id, data: `Data for ${id}` };
+    })
+  );
+
+  const handleFetchMultiple = () => {
+    // All three effects run in parallel
+    fetchData(1);
+    fetchData(2);
+    fetchData(3);
+    // Logs will show all three starting immediately
+    // and completing after ~2 seconds (not 6 seconds)
+  };
+
+  return <button onClick={handleFetchMultiple}>Fetch Multiple</button>;
+}
+```
+
+## With Error Handling
+
+```tsx
+import { useRunEffect } from 'use-effect-ts';
+import { Effect, Console } from 'effect';
+
+class NetworkError {
+  readonly _tag = 'NetworkError';
+  constructor(readonly message: string) {}
+}
+
+function ApiClient() {
+  const callApi = useRunEffect((endpoint: string) =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () => fetch(`/api/${endpoint}`),
+        catch: (error) => new NetworkError(String(error)),
+      });
+
+      if (!response.ok) {
+        return yield* Effect.fail(
+          new NetworkError(`HTTP ${response.status}`)
+        );
+      }
+
+      return yield* Effect.tryPromise({
+        try: () => response.json(),
+        catch: (error) => new NetworkError('Invalid JSON'),
+      });
+    })
+  );
+
+  const handleApiCall = async () => {
+    const exit = await callApi('users');
+    
+    if (exit._tag === 'Failure') {
+      // Handle typed errors
+      const cause = exit.cause;
+      yield* Console.error('API call failed:', cause);
+    } else {
+      yield* Console.log('Success:', exit.value);
+    }
+  };
+
+  return <button onClick={handleApiCall}>Call API</button>;
+}
+```
+
+## Important Notes
+
+<Warning>
+  The returned function should not be called before the component-scoped `FiberSet` is initialized. If you need to run an effect on component mount, use `useComponentLifecycle` to ensure the scope is ready:
+
+  ```tsx
+  const runEffect = useRunEffect(myEffect);
+  
+  useComponentLifecycle(
+    Effect.gen(function* () {
+      yield* runEffect(initialArgs);
+    })
+  );
+  ```
+</Warning>
+
+<Note>
+  All effects executed via `useRunEffect` run in parallel. If you need sequential execution, use [useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue). If you need to cancel previous executions, use [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest).
+</Note>
+
+## Use Cases
+
+- **Multiple independent API calls** that can run in parallel
+- **Background tasks** that need to be tracked and cleaned up
+- **Event handlers** that trigger effects without blocking each other
+- **Real-time updates** where multiple concurrent operations are acceptable
+
+## See Also
+
+- [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest) - Cancel previous executions
+- [useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue) - Sequential execution
+- [useComponentScope](/use-effect-ts/hooks/use-component-scope) - Manual scope management
+- [useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle) - Run effects on mount

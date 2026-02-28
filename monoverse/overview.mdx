@@ -1,0 +1,59 @@
+---
+title: Overview
+description: A zero-config, opinionated monorepo management tool
+---
+
+Monoverse is a zero-config, opinionated monorepo management tool that works out of the box with any monorepo. It automatically detects your package manager (pnpm, yarn, npm, bun) and discovers all workspaces without requiring any configuration.
+
+## Key Features
+
+- **Zero Configuration**: Works out of the box with any monorepo structure
+- **Auto-Detection**: Automatically detects your package manager and workspace configuration
+- **Dependency Management**: Add and remove dependencies with automatic version syncing
+- **Lint & Fix**: Detect and auto-fix issues across all workspaces
+- **Format**: Automatically format all package.json files
+- **Multi-Monorepo Support**: Manage multiple monorepos together with `monoverse.json`
+
+## What Monoverse Can Do
+
+### Explore Your Monorepo
+
+List all workspaces in a tree structure to understand your monorepo layout at a glance.
+
+### Manage Dependencies
+
+Add or remove dependencies from the current workspace with automatic version syncing across your monorepo. When adding a dependency that already exists in other workspaces, Monoverse will use the existing version.
+
+### Maintain Code Quality
+
+Detect and fix common issues:
+- Version mismatches across workspaces
+- Unpinned versions (`^1.0.0`, `~1.0.0`)
+- Unformatted package.json files
+- Duplicate workspace names
+
+## How It Works
+
+Monoverse analyzes your monorepo by:
+
+1. Finding the monorepo root (looks for workspace configuration in package.json)
+2. Discovering all workspaces using your package manager's workspace patterns
+3. Analyzing dependencies across all workspaces
+4. Running validation rules to detect issues
+5. Providing commands to fix detected issues
+
+No configuration files or setup required - just install and run.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/monoverse/installation">
+    Get started with Monoverse
+  </Card>
+  <Card title="Commands" icon="terminal" href="/monoverse/commands/ls">
+    Explore available commands
+  </Card>
+  <Card title="Configuration" icon="gear" href="/monoverse/configuration">
+    Learn about advanced configuration
+  </Card>
+</CardGroup>

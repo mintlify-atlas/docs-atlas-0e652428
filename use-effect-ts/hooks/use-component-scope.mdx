@@ -1,0 +1,356 @@
+---
+title: 'useComponentScope'
+description: 'Get an Effect.TS Scope tied to the React component lifecycle'
+---
+
+# useComponentScope
+
+The `useComponentScope` hook creates and returns an Effect `Scope` that is tied to the component's lifecycle. The scope is created when the component mounts and automatically closed when the component unmounts, releasing all acquired resources.
+
+## Signature
+
+```typescript
+function useComponentScope(
+  setup?: (scope: Scope.CloseableScope) => void
+): Scope.CloseableScope | undefined
+```
+
+### Parameters
+
+<ParamField path="setup" type="(scope: Scope.CloseableScope) => void">
+  Optional callback function that receives the scope immediately after it's created. This allows you to perform setup operations with the scope before rendering completes.
+</ParamField>
+
+### Returns
+
+Returns a `Scope.CloseableScope` or `undefined`:
+- `undefined` during the initial render (before the effect runs)
+- `Scope.CloseableScope` after the component mounts
+
+## How It Works
+
+<Steps>
+  <Step title="Scope Creation">
+    When the component mounts, `useComponentScope` creates a new Effect `Scope` using `Effect.runSync(Scope.make())`.
+  </Step>
+  
+  <Step title="Setup Callback">
+    If a setup callback is provided, it's called immediately with the newly created scope.
+  </Step>
+  
+  <Step title="State Update">
+    The scope is stored in React state and returned to the component.
+  </Step>
+  
+  <Step title="Cleanup">
+    When the component unmounts, the scope is closed using `Scope.close`, which releases all resources acquired within the scope.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, Console, Scope } from 'effect';
+
+function ScopedComponent() {
+  const scope = useComponentScope();
+
+  const handleClick = () => {
+    if (!scope) {
+      console.log('Scope not ready yet');
+      return;
+    }
+
+    Effect.runPromise(
+      Effect.gen(function* () {
+        yield* Console.log('Using component scope');
+        
+        // Acquire a resource within the scope
+        const resource = yield* Effect.acquireRelease(
+          Effect.succeed({ name: 'MyResource' }),
+          (r) => Console.log(`Releasing ${r.name}`)
+        ).pipe(Scope.extend(scope));
+        
+        yield* Console.log(`Acquired: ${resource.name}`);
+      })
+    );
+  };
+
+  return <button onClick={handleClick}>Use Scope</button>;
+}
+```
+
+## With Setup Callback
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, FiberSet, Scope } from 'effect';
+import { useState } from 'react';
+
+function TaskManager() {
+  const [fiberSet, setFiberSet] = useState<FiberSet.FiberSet | null>(null);
+
+  useComponentScope((scope) => {
+    // Initialize FiberSet when scope is created
+    const fs = Effect.runSync(
+      FiberSet.make().pipe(Scope.extend(scope))
+    );
+    setFiberSet(fs);
+  });
+
+  const runTask = (taskId: number) => {
+    if (!fiberSet) return;
+
+    Effect.runPromise(
+      FiberSet.run(
+        fiberSet,
+        Effect.gen(function* () {
+          yield* Effect.sleep('1 second');
+          console.log(`Task ${taskId} completed`);
+        })
+      )
+    );
+  };
+
+  return (
+    <div>
+      <button onClick={() => runTask(1)}>Run Task 1</button>
+      <button onClick={() => runTask(2)}>Run Task 2</button>
+    </div>
+  );
+}
+```
+
+## Manual Resource Management
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, Console, Scope } from 'effect';
+import { useEffect, useState } from 'react';
+
+interface Database {
+  query: (sql: string) => Promise<any>;
+  close: () => Promise<void>;
+}
+
+function DatabaseComponent() {
+  const scope = useComponentScope();
+  const [db, setDb] = useState<Database | null>(null);
+
+  useEffect(() => {
+    if (!scope) return;
+
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const database = yield* Effect.acquireRelease(
+          Effect.gen(function* () {
+            yield* Console.log('Opening database connection');
+            return {
+              query: async (sql: string) => ({ data: [] }),
+              close: async () => {},
+            };
+          }),
+          (db) =>
+            Effect.gen(function* () {
+              yield* Console.log('Closing database connection');
+              yield* Effect.promise(() => db.close());
+            })
+        ).pipe(Scope.extend(scope));
+
+        setDb(database);
+      })
+    );
+  }, [scope]);
+
+  const handleQuery = async () => {
+    if (!db) return;
+    const result = await db.query('SELECT * FROM users');
+    console.log(result);
+  };
+
+  return (
+    <div>
+      <button onClick={handleQuery} disabled={!db}>
+        Run Query
+      </button>
+    </div>
+  );
+}
+```
+
+## Building Custom Hooks
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, FiberHandle, Scope } from 'effect';
+import { useState } from 'react';
+
+// Custom hook that uses component scope
+function useInterval<A, E>(
+  effect: Effect.Effect<A, E, never>,
+  intervalMs: number
+) {
+  const scope = useComponentScope();
+  const [isRunning, setIsRunning] = useState(false);
+
+  const start = () => {
+    if (!scope || isRunning) return;
+
+    setIsRunning(true);
+
+    Effect.runFork(
+      Effect.gen(function* () {
+        const handle = yield* FiberHandle.make().pipe(Scope.extend(scope));
+
+        yield* FiberHandle.run(
+          handle,
+          Effect.gen(function* () {
+            while (true) {
+              yield* effect;
+              yield* Effect.sleep(`${intervalMs} millis`);
+            }
+          })
+        );
+      })
+    );
+  };
+
+  return { start, isRunning };
+}
+
+// Usage
+function PollingComponent() {
+  const { start, isRunning } = useInterval(
+    Effect.gen(function* () {
+      const data = yield* Effect.tryPromise(() => fetch('/api/status'));
+      console.log('Polled:', data);
+    }),
+    5000
+  );
+
+  return (
+    <button onClick={start} disabled={isRunning}>
+      {isRunning ? 'Polling...' : 'Start Polling'}
+    </button>
+  );
+}
+```
+
+## Advanced: Multiple Scopes
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, Console, Scope } from 'effect';
+import { useState } from 'react';
+
+function MultiScopeComponent() {
+  // Get the component-level scope
+  const componentScope = useComponentScope();
+  
+  const [taskScope, setTaskScope] = useState<Scope.CloseableScope | null>(null);
+
+  const startTask = () => {
+    if (!componentScope) return;
+
+    Effect.runPromise(
+      Effect.gen(function* () {
+        // Create a child scope for this specific task
+        const scope = yield* Scope.make().pipe(Scope.extend(componentScope));
+        setTaskScope(scope);
+
+        // Acquire resources in the task scope
+        yield* Effect.acquireRelease(
+          Console.log('Task started'),
+          () => Console.log('Task ended')
+        ).pipe(Scope.extend(scope));
+      })
+    );
+  };
+
+  const endTask = () => {
+    if (!taskScope) return;
+
+    Effect.runPromise(
+      Scope.close(taskScope, Effect.void)
+    );
+    setTaskScope(null);
+  };
+
+  return (
+    <div>
+      <button onClick={startTask} disabled={!!taskScope}>
+        Start Task
+      </button>
+      <button onClick={endTask} disabled={!taskScope}>
+        End Task
+      </button>
+    </div>
+  );
+}
+```
+
+## Scope Lifecycle Visualization
+
+```tsx
+import { useComponentScope } from 'use-effect-ts';
+import { Effect, Console, Scope } from 'effect';
+import { useEffect } from 'react';
+
+function ScopeLifecycleDemo() {
+  const scope = useComponentScope((s) => {
+    console.log('1. Scope created:', s);
+  });
+
+  useEffect(() => {
+    console.log('2. Scope available:', scope);
+
+    if (scope) {
+      Effect.runPromise(
+        Effect.gen(function* () {
+          yield* Console.log('3. Acquiring resource');
+          
+          yield* Effect.acquireRelease(
+            Console.log('4. Resource acquired'),
+            () => Console.log('6. Resource released (on unmount)')
+          ).pipe(Scope.extend(scope));
+          
+          yield* Console.log('5. Resource in use');
+        })
+      );
+    }
+  }, [scope]);
+
+  return <div>Check console for scope lifecycle</div>;
+}
+```
+
+## Important Notes
+
+<Warning>
+  The scope is `undefined` during the initial render. Always check if the scope exists before using it, or use the setup callback for immediate initialization.
+</Warning>
+
+<Note>
+  Resources acquired with `Scope.extend(scope)` will be automatically released when the component unmounts. You don't need to manually close the scope.
+</Note>
+
+<Tip>
+  Use the setup callback when you need to initialize scope-dependent resources immediately, such as creating a `FiberSet` or `FiberHandle` that will be used throughout the component's lifecycle.
+</Tip>
+
+## Use Cases
+
+- **Manual scope management** when automatic hooks don't fit your needs
+- **Building custom hooks** that require scope management
+- **Resource pooling** with lifecycle-aware cleanup
+- **Advanced fiber management** with `FiberSet` or `FiberHandle`
+- **Multiple nested scopes** for fine-grained resource control
+- **Integration with non-Effect code** that needs Effect resources
+
+## See Also
+
+- [useComponentLifecycle](/use-effect-ts/hooks/use-component-lifecycle) - Automatic effect execution on mount
+- [useRunEffect](/use-effect-ts/hooks/use-run-effect) - Uses component scope internally
+- [useRunEffectLatest](/use-effect-ts/hooks/use-run-effect-latest) - Uses component scope internally
+- [useRunEffectQueue](/use-effect-ts/hooks/use-run-effect-queue) - Uses component scope internally

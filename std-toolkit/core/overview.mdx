@@ -1,0 +1,176 @@
+---
+title: Core Package Overview
+description: RPC utilities and shared types for STD Toolkit
+---
+
+## What is @std-toolkit/core?
+
+The core package provides foundational utilities for building RPC endpoints and type-safe CRUD operations. It includes:
+
+- **RPC helpers** - Generate CRUD endpoints from ESchema definitions
+- **Shared types** - Common interfaces for entities and metadata
+- **Error handling** - Standardized error types
+
+## Installation
+
+```bash
+npm install @std-toolkit/core @std-toolkit/eschema effect @effect/rpc
+```
+
+## Package Exports
+
+```typescript
+import { 
+  makeGetRpc,
+  makeInsertRpc,
+  makeUpdateRpc,
+  makeDeleteRpc,
+  makeEntityRpcGroup,
+  StdToolkitError 
+} from "@std-toolkit/core/rpc";
+```
+
+## Features
+
+### Type-Safe RPC Generation
+
+Automatically generate CRUD RPC endpoints from your ESchema:
+
+```typescript
+import { ESchema } from "@std-toolkit/eschema";
+import { makeEntityRpcGroup } from "@std-toolkit/core/rpc";
+import { Schema } from "effect";
+
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+// Generate all CRUD endpoints
+const [GetUser, InsertUser, UpdateUser, DeleteUser] = makeEntityRpcGroup(
+  UserSchema
+);
+
+// Or create individual endpoints
+const GetUser = makeGetRpc(UserSchema);
+const InsertUser = makeInsertRpc(UserSchema);
+```
+
+### Standard Error Types
+
+All RPC operations use `StdToolkitError` for consistent error handling:
+
+```typescript
+import { StdToolkitError } from "@std-toolkit/core/rpc";
+import { Effect } from "effect";
+
+const handler = GetUser.handler((payload) =>
+  Effect.gen(function* () {
+    const user = yield* Users.get({ userId: payload.userId });
+    
+    if (!user) {
+      return yield* new StdToolkitError({
+        message: "User not found",
+        code: "NOT_FOUND",
+      });
+    }
+    
+    return user;
+  })
+);
+```
+
+### Entity Metadata
+
+Shared metadata types across all packages:
+
+```typescript
+import type { EntityType } from "@std-toolkit/core";
+
+// EntityType includes both value and metadata
+type User = {
+  value: {
+    userId: string;
+    name: string;
+    email: string;
+  };
+  meta: {
+    _v: string;    // Schema version
+    _uid: string;  // Update ID (ULID)
+    _d: boolean;   // Soft delete flag
+    _e: string;    // Entity type
+  };
+};
+```
+
+## Use Cases
+
+### Building an RPC Server
+
+Combine generated RPCs with @effect/rpc:
+
+```typescript
+import { Rpc } from "@effect/rpc";
+import { makeEntityRpcGroup } from "@std-toolkit/core/rpc";
+import { HttpServer } from "@effect/platform";
+
+const [GetUser, InsertUser, UpdateUser, DeleteUser] = makeEntityRpcGroup(
+  UserSchema
+);
+
+const router = Rpc.router({
+  getUser: GetUser.handler((payload) => Users.get({ userId: payload.userId })),
+  insertUser: InsertUser.handler((payload) => Users.insert(payload)),
+  updateUser: UpdateUser.handler((payload) =>
+    Users.update({ userId: payload.userId }, payload.updates)
+  ),
+  deleteUser: DeleteUser.handler((payload) => Users.delete({ userId: payload.userId })),
+});
+
+const server = HttpServer.router.empty.pipe(
+  HttpServer.router.post("/rpc", Rpc.toHttpApp(router))
+);
+```
+
+### Custom Prefixes
+
+Add prefixes to RPC names:
+
+```typescript
+const [GetUser, InsertUser, UpdateUser, DeleteUser] = makeEntityRpcGroup(
+  UserSchema,
+  "admin/"  // Prefix all RPC names
+);
+
+// RPC names: "admin/getUser", "admin/insertUser", etc.
+```
+
+### Validation and Transformation
+
+RPC payloads are automatically validated using Effect Schema:
+
+```typescript
+const InsertUser = makeInsertRpc(UserSchema);
+
+// Payload schema excludes the ID field (auto-generated)
+// Type: { name: string; email: string }
+
+// Invalid payloads are rejected before reaching the handler
+const result = yield* InsertUser({ name: 123 });
+// Error: Expected string, got number
+```
+
+## API Reference
+
+See the [RPC Utilities](/std-toolkit/core/rpc) page for detailed API documentation.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="RPC Utilities" icon="network-wired" href="/std-toolkit/core/rpc">
+    Explore the RPC API in detail
+  </Card>
+  <Card title="ESchema Overview" icon="diagram-project" href="/std-toolkit/eschema/overview">
+    Learn about schema definitions
+  </Card>
+</CardGroup>

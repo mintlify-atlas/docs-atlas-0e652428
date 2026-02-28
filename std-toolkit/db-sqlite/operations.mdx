@@ -1,0 +1,564 @@
+---
+title: Database Operations
+description: Complete guide to CRUD operations and queries
+---
+
+## Setup
+
+Before using an entity, create the table and indexes:
+
+```typescript
+yield* Users.setup();
+```
+
+This creates:
+- The table (if it doesn't exist)
+- Primary key columns (`pk`, `sk`)
+- Metadata columns (`_data`, `_e`, `_v`, `_uid`, `_d`)
+- Secondary index columns (`IDX1PK`, `IDX1SK`, etc.)
+- Indexes on all key columns
+
+<Note>
+  `setup()` is **idempotent** - safe to call multiple times.
+</Note>
+
+### Multiple Entities
+
+Use `EntityRegistry` to setup multiple entities at once:
+
+```typescript
+import { EntityRegistry } from "@std-toolkit/sqlite";
+
+const registry = EntityRegistry.make(table)
+  .register(Users)
+  .register(Posts)
+  .register(Comments)
+  .build();
+
+yield* registry.setup();
+```
+
+## Insert
+
+Create a new entity:
+
+```typescript
+const user = yield* Users.insert({
+  userId: "user-1",  // Optional - auto-generated if omitted
+  email: "alice@example.com",
+  name: "Alice",
+  status: "active",
+});
+
+console.log(user.value);
+// { userId: "user-1", email: "alice@example.com", name: "Alice", status: "active" }
+
+console.log(user.meta);
+// { _v: "v1", _uid: "01HQXYZ...", _d: false, _e: "User" }
+```
+
+### Auto-Generated IDs
+
+Omit the ID field to auto-generate a ULID:
+
+```typescript
+const user = yield* Users.insert({
+  email: "bob@example.com",
+  name: "Bob",
+  status: "active",
+});
+
+console.log(user.value.userId);  // "01HQABC123DEF456..."
+```
+
+### Batch Inserts
+
+Use `Effect.all` for parallel inserts:
+
+```typescript
+const users = yield* Effect.all([
+  Users.insert({ email: "alice@example.com", name: "Alice", status: "active" }),
+  Users.insert({ email: "bob@example.com", name: "Bob", status: "active" }),
+  Users.insert({ email: "charlie@example.com", name: "Charlie", status: "inactive" }),
+], { concurrency: 10 });
+
+console.log(`Inserted ${users.length} users`);
+```
+
+## Get
+
+Retrieve a single entity by primary key:
+
+```typescript
+const user = yield* Users.get({ userId: "user-1" });
+
+if (user) {
+  console.log(user.value.name);
+  console.log(user.meta._uid);
+} else {
+  console.log("User not found");
+}
+```
+
+**Returns:** `EntityType<T> | null`
+
+### With Composite Keys
+
+For entities with pk fields:
+
+```typescript
+// Posts has pk: ["authorId"]
+const post = yield* Posts.get({
+  authorId: "user-1",
+  postId: "post-1",
+});
+```
+
+## Update
+
+Modify an existing entity:
+
+```typescript
+const updated = yield* Users.update(
+  { userId: "user-1" },  // Key
+  { name: "Alice Smith" }  // Updates
+);
+
+console.log(updated.value.name);    // "Alice Smith"
+console.log(updated.value.email);   // Unchanged
+console.log(updated.meta._uid);     // New ULID (changes on every update)
+```
+
+### Partial Updates
+
+Only modified fields need to be specified:
+
+```typescript
+// Update just the status
+yield* Users.update(
+  { userId: "user-1" },
+  { status: "inactive" }
+);
+
+// Update multiple fields
+yield* Users.update(
+  { userId: "user-1" },
+  { name: "Alice", status: "active" }
+);
+```
+
+### Error on Missing Entity
+
+Updating a non-existent entity fails:
+
+```typescript
+const program = Effect.gen(function* () {
+  yield* Users.update({ userId: "invalid" }, { name: "X" });
+}).pipe(
+  Effect.catchTag("SqliteDBError", (error) => {
+    console.error("Update failed:", error.error._tag);  // "UpdateFailed"
+    return Effect.succeed(null);
+  })
+);
+```
+
+## Delete
+
+Soft-delete an entity (sets `_d: true`):
+
+```typescript
+const deleted = yield* Users.delete({ userId: "user-1" });
+
+console.log(deleted.meta._d);  // true
+```
+
+<Warning>
+  This is a **soft delete**. The entity remains in the database with `_d: true`.
+</Warning>
+
+### Hard Delete
+
+For testing only - removes all rows:
+
+```typescript
+const result = yield* Users.dangerouslyRemoveAllRows("i know what i am doing");
+
+console.log(`Deleted ${result.rowsDeleted} rows`);
+```
+
+<Warning>
+  **Never use in production!** This irreversibly deletes all rows for the entity.
+</Warning>
+
+## Query
+
+Query entities by primary or secondary indexes.
+
+### Primary Index Query
+
+#### Query All Entities
+
+```typescript
+const allUsers = yield* Users.query("primary", {
+  pk: {},  // Empty pk when entity has no pk fields
+  sk: { ">=": null },  // Start from beginning
+});
+
+console.log(`Found ${allUsers.items.length} users`);
+```
+
+#### Query with pk Fields
+
+For entities with pk fields (e.g., Posts with `pk: ["authorId"]`):
+
+```typescript
+const authorPosts = yield* Posts.query("primary", {
+  pk: { authorId: "user-1" },
+  sk: { ">=": null },
+});
+
+console.log(`Author has ${authorPosts.items.length} posts`);
+```
+
+#### Range Queries
+
+Use operators for range queries:
+
+```typescript
+// Posts after a specific ID
+const after = yield* Posts.query("primary", {
+  pk: { authorId: "user-1" },
+  sk: { ">": "post-100" },
+});
+
+// Posts before a specific ID
+const before = yield* Posts.query("primary", {
+  pk: { authorId: "user-1" },
+  sk: { "<": "post-200" },
+});
+
+// Posts between IDs
+const between = yield* Posts.query("primary", {
+  pk: { authorId: "user-1" },
+  sk: { ">=": "post-100" },
+});
+```
+
+### Secondary Index Query
+
+Query by secondary index:
+
+```typescript
+// Users.index("IDX1", "byEmail", { pk: ["email"] })
+const byEmail = yield* Users.query("byEmail", {
+  pk: { email: "alice@example.com" },
+  sk: { ">=": null },
+});
+
+if (byEmail.items.length > 0) {
+  console.log("Found user:", byEmail.items[0]!.value.name);
+}
+```
+
+### Timeline Index Query
+
+Query in chronological order:
+
+```typescript
+const Posts = SQLiteEntity.make(table)
+  .eschema(PostSchema)
+  .primary({ pk: ["authorId"] })
+  .timeline("IDX1")  // pk: same as primary, sk: _uid
+  .build();
+
+// Get latest 10 posts by author
+const latest = yield* Posts.query("timeline", {
+  pk: { authorId: "user-1" },
+  sk: { "<": null },  // Descending order
+}, { limit: 10 });
+
+console.log("Latest post:", latest.items[0]?.value.title);
+```
+
+### Query Options
+
+```typescript
+const users = yield* Users.query("primary", {
+  pk: {},
+  sk: { ">=": null },
+}, {
+  limit: 50,  // Max 50 items
+});
+```
+
+<ParamField path="limit" type="number">
+  Maximum number of items to return (default: 100)
+</ParamField>
+
+## Query Operators
+
+Supported sort key operators:
+
+<ResponseField name="&gt;" type="string | null">
+  Greater than - Returns items with sk > value (ascending order)
+</ResponseField>
+
+<ResponseField name="&gt;=" type="string | null">
+  Greater than or equal - Returns items with sk >= value (ascending order)
+</ResponseField>
+
+<ResponseField name="&lt;" type="string | null">
+  Less than - Returns items with sk &lt; value (descending order)
+</ResponseField>
+
+<ResponseField name="&lt;=" type="string | null">
+  Less than or equal - Returns items with sk &lt;= value (descending order)
+</ResponseField>
+
+<Note>
+  Use `null` to start from the beginning (`>=`, `>`) or end (`<=`, `<`) of the index.
+</Note>
+
+### Examples
+
+```typescript
+// Get all users (ascending by userId)
+const ascending = yield* Users.query("primary", {
+  pk: {},
+  sk: { ">=": null },
+});
+
+// Get all users (descending by userId)
+const descending = yield* Users.query("primary", {
+  pk: {},
+  sk: { "<": null },
+});
+
+// Get users after a specific ID
+const after = yield* Users.query("primary", {
+  pk: {},
+  sk: { ">": "user-100" },
+});
+
+// Get latest 10 by timeline (descending by _uid)
+const latest = yield* Users.query("timeline", {
+  pk: {},
+  sk: { "<": null },
+}, { limit: 10 });
+```
+
+## Query Streaming
+
+For large result sets, use `queryStream` to process in batches:
+
+```typescript
+import { Stream } from "effect";
+
+const stream = Users.queryStream(
+  "primary",
+  {
+    pk: {},
+    sk: { ">=": null },
+  },
+  { batchSize: 100 }  // Fetch 100 items per batch
+);
+
+const program = stream.pipe(
+  Stream.runForEach((batch) =>
+    Effect.gen(function* () {
+      console.log(`Processing ${batch.length} users`);
+      
+      // Process each user
+      for (const user of batch) {
+        console.log(user.value.name);
+      }
+    })
+  )
+);
+
+yield* program;
+```
+
+<Note>
+  Only `>` and `<` operators are supported for streaming.
+</Note>
+
+## Subscribe
+
+Continuously fetch new items until exhausted:
+
+```typescript
+const program = Effect.gen(function* () {
+  let cursor: string | null = null;
+  
+  yield* Users.subscribe({
+    key: "primary",
+    pk: {},
+    cursor,
+    limit: 50,
+  });
+});
+```
+
+This fetches items in batches until no more are available, then subscribes to real-time updates.
+
+## Complete Examples
+
+### Blog System
+
+```typescript
+const UserSchema = ESchema.make("User", "userId", {
+  name: Schema.String,
+  email: Schema.String,
+}).build();
+
+const PostSchema = ESchema.make("Post", "postId", {
+  authorId: Schema.String,
+  title: Schema.String,
+  content: Schema.String,
+  status: Schema.Literal("draft", "published"),
+}).build();
+
+const table = SQLiteTable.make({ tableName: "blog_data" })
+  .primary("pk", "sk")
+  .index("IDX1", "IDX1PK", "IDX1SK")
+  .index("IDX2", "IDX2PK", "IDX2SK")
+  .build();
+
+const Users = SQLiteEntity.make(table)
+  .eschema(UserSchema)
+  .primary()
+  .index("IDX1", "byEmail", { pk: ["email"] })
+  .build();
+
+const Posts = SQLiteEntity.make(table)
+  .eschema(PostSchema)
+  .primary({ pk: ["authorId"] })
+  .index("IDX1", "byStatus", { pk: ["status"] })
+  .timeline("IDX2")  // For latest posts
+  .build();
+
+const program = Effect.gen(function* () {
+  // Setup
+  yield* Users.setup();
+  yield* Posts.setup();
+  
+  // Create user
+  const user = yield* Users.insert({
+    userId: "user-1",
+    name: "Alice",
+    email: "alice@example.com",
+  });
+  
+  // Create posts
+  yield* Posts.insert({
+    authorId: user.value.userId,
+    postId: "post-1",
+    title: "First Post",
+    content: "Hello World",
+    status: "published",
+  });
+  
+  yield* Posts.insert({
+    authorId: user.value.userId,
+    postId: "post-2",
+    title: "Draft Post",
+    content: "Work in progress",
+    status: "draft",
+  });
+  
+  // Query posts by author
+  const authorPosts = yield* Posts.query("primary", {
+    pk: { authorId: user.value.userId },
+    sk: { ">=": null },
+  });
+  console.log(`${user.value.name} has ${authorPosts.items.length} posts`);
+  
+  // Query published posts
+  const published = yield* Posts.query("byStatus", {
+    pk: { status: "published" },
+    sk: { ">=": null },
+  });
+  console.log(`${published.items.length} published posts`);
+  
+  // Get latest posts
+  const latest = yield* Posts.query("timeline", {
+    pk: { authorId: user.value.userId },
+    sk: { "<": null },
+  }, { limit: 10 });
+  console.log(`Latest post: ${latest.items[0]?.value.title}`);
+  
+  // Update post status
+  yield* Posts.update(
+    { authorId: user.value.userId, postId: "post-2" },
+    { status: "published" }
+  );
+  
+  // Delete post
+  yield* Posts.delete({ authorId: user.value.userId, postId: "post-1" });
+});
+```
+
+### E-commerce Orders
+
+```typescript
+const OrderSchema = ESchema.make("Order", "orderId", {
+  customerId: Schema.String,
+  status: Schema.Literal("pending", "shipped", "delivered", "cancelled"),
+  total: Schema.Number,
+}).build();
+
+const Orders = SQLiteEntity.make(table)
+  .eschema(OrderSchema)
+  .primary({ pk: ["customerId"] })  // Group orders by customer
+  .index("IDX1", "byStatus", { pk: ["status"] })
+  .timeline("IDX2")  // For recent orders
+  .build();
+
+const program = Effect.gen(function* () {
+  yield* Orders.setup();
+  
+  // Create order
+  const order = yield* Orders.insert({
+    customerId: "customer-1",
+    orderId: "order-1",
+    status: "pending",
+    total: 99.99,
+  });
+  
+  // Get customer's orders
+  const customerOrders = yield* Orders.query("primary", {
+    pk: { customerId: "customer-1" },
+    sk: { ">=": null },
+  });
+  
+  // Get pending orders
+  const pending = yield* Orders.query("byStatus", {
+    pk: { status: "pending" },
+    sk: { ">=": null },
+  });
+  
+  // Update order status
+  yield* Orders.update(
+    { customerId: "customer-1", orderId: "order-1" },
+    { status: "shipped" }
+  );
+  
+  // Get recent orders
+  const recent = yield* Orders.query("timeline", {
+    pk: { customerId: "customer-1" },
+    sk: { "<": null },
+  }, { limit: 5 });
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Adapters" icon="plug" href="/std-toolkit/db-sqlite/adapters">
+    Configure database adapters
+  </Card>
+  <Card title="Transactions" icon="arrows-rotate" href="/std-toolkit/db-sqlite/transactions">
+    Handle transactions safely
+  </Card>
+</CardGroup>

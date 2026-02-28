@@ -1,0 +1,513 @@
+---
+title: Transaction Handling
+description: Safely execute multiple operations atomically
+---
+
+## Overview
+
+Transactions ensure that multiple database operations either all succeed or all fail together. This is critical for maintaining data consistency.
+
+## Basic Transactions
+
+Wrap operations in `SqliteDB.transaction`:
+
+```typescript
+import { SqliteDB } from "@std-toolkit/sqlite";
+import { Effect } from "effect";
+
+const program = yield* SqliteDB.transaction(
+  Effect.gen(function* () {
+    // All operations in this block are atomic
+    yield* Users.insert({ name: "Alice", email: "alice@example.com" });
+    yield* Users.insert({ name: "Bob", email: "bob@example.com" });
+    yield* Posts.insert({ authorId: "user-1", title: "First Post", content: "..." });
+    
+    // Auto-commit if all succeed
+    // Auto-rollback if any fail
+  })
+);
+```
+
+<Note>
+  Transactions automatically commit on success and rollback on error.
+</Note>
+
+## How It Works
+
+1. `BEGIN` is called before the effect runs
+2. Operations execute within the transaction
+3. If all succeed: `COMMIT` is called
+4. If any fail: `ROLLBACK` is called
+
+```typescript
+const program = Effect.gen(function* () {
+  yield* SqliteDB.transaction(
+    Effect.gen(function* () {
+      // BEGIN transaction
+      
+      yield* Users.insert({ ... });  // OK
+      yield* Posts.insert({ ... });  // OK
+      yield* Comments.insert({ ... });  // FAILS!
+      
+      // ROLLBACK (none of the inserts persist)
+    })
+  );
+});
+```
+
+## Error Handling
+
+Errors inside transactions trigger automatic rollback:
+
+```typescript
+const program = Effect.gen(function* () {
+  const result = yield* SqliteDB.transaction(
+    Effect.gen(function* () {
+      const user = yield* Users.insert({ name: "Alice", email: "alice@example.com" });
+      
+      // This will fail if the user already exists
+      yield* Users.insert({ userId: user.value.userId, name: "Bob", email: "bob@example.com" });
+    })
+  ).pipe(
+    Effect.catchAll((error) =>
+      Effect.gen(function* () {
+        console.error("Transaction failed:", error);
+        return null;
+      })
+    )
+  );
+});
+```
+
+## Use Cases
+
+### Creating Related Entities
+
+Ensure user and profile are created together:
+
+```typescript
+const createUserWithProfile = (data: {
+  name: string;
+  email: string;
+  bio: string;
+}) =>
+  SqliteDB.transaction(
+    Effect.gen(function* () {
+      // Create user
+      const user = yield* Users.insert({
+        name: data.name,
+        email: data.email,
+      });
+      
+      // Create profile
+      const profile = yield* Profiles.insert({
+        userId: user.value.userId,
+        bio: data.bio,
+      });
+      
+      return { user: user.value, profile: profile.value };
+    })
+  );
+
+const result = yield* createUserWithProfile({
+  name: "Alice",
+  email: "alice@example.com",
+  bio: "Software engineer",
+});
+```
+
+### Transferring Resources
+
+Ensure atomic updates:
+
+```typescript
+const transferPoints = (fromId: string, toId: string, amount: number) =>
+  SqliteDB.transaction(
+    Effect.gen(function* () {
+      // Get sender
+      const from = yield* Users.get({ userId: fromId });
+      if (!from) {
+        return yield* Effect.fail(new Error("Sender not found"));
+      }
+      
+      if (from.value.points < amount) {
+        return yield* Effect.fail(new Error("Insufficient points"));
+      }
+      
+      // Get receiver
+      const to = yield* Users.get({ userId: toId });
+      if (!to) {
+        return yield* Effect.fail(new Error("Receiver not found"));
+      }
+      
+      // Update both (atomic)
+      yield* Users.update(
+        { userId: fromId },
+        { points: from.value.points - amount }
+      );
+      
+      yield* Users.update(
+        { userId: toId },
+        { points: to.value.points + amount }
+      );
+      
+      return { from: fromId, to: toId, amount };
+    })
+  );
+
+const result = yield* transferPoints("user-1", "user-2", 100);
+```
+
+### Conditional Updates
+
+Update multiple entities based on conditions:
+
+```typescript
+const publishPost = (postId: string, authorId: string) =>
+  SqliteDB.transaction(
+    Effect.gen(function* () {
+      // Get post
+      const post = yield* Posts.get({ authorId, postId });
+      if (!post) {
+        return yield* Effect.fail(new Error("Post not found"));
+      }
+      
+      if (post.value.status === "published") {
+        return yield* Effect.fail(new Error("Post already published"));
+      }
+      
+      // Update post status
+      yield* Posts.update(
+        { authorId, postId },
+        { status: "published" }
+      );
+      
+      // Increment author's published count
+      const author = yield* Users.get({ userId: authorId });
+      if (author) {
+        yield* Users.update(
+          { userId: authorId },
+          { publishedCount: author.value.publishedCount + 1 }
+        );
+      }
+      
+      return post.value;
+    })
+  );
+```
+
+### Batch Operations
+
+Insert multiple items atomically:
+
+```typescript
+const createOrder = (order: {
+  customerId: string;
+  items: Array<{ productId: string; quantity: number; price: number }>;
+}) =>
+  SqliteDB.transaction(
+    Effect.gen(function* () {
+      // Create order
+      const newOrder = yield* Orders.insert({
+        customerId: order.customerId,
+        status: "pending",
+        total: order.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+      });
+      
+      // Create order items
+      yield* Effect.all(
+        order.items.map((item) =>
+          OrderItems.insert({
+            orderId: newOrder.value.orderId,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+          })
+        ),
+        { concurrency: 10 }
+      );
+      
+      return newOrder.value;
+    })
+  );
+
+const order = yield* createOrder({
+  customerId: "customer-1",
+  items: [
+    { productId: "prod-1", quantity: 2, price: 29.99 },
+    { productId: "prod-2", quantity: 1, price: 49.99 },
+  ],
+});
+```
+
+## Nested Transactions
+
+<Warning>
+  Nested transactions are **not supported**. Attempting to nest transactions will fail with `NestedTransactionNotSupported`.
+</Warning>
+
+```typescript
+// ❌ This will fail
+const program = yield* SqliteDB.transaction(
+  Effect.gen(function* () {
+    yield* Users.insert({ ... });
+    
+    // Error: NestedTransactionNotSupported
+    yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        yield* Posts.insert({ ... });
+      })
+    );
+  })
+);
+```
+
+**Solution:** Flatten operations into a single transaction:
+
+```typescript
+// ✅ Correct
+const program = yield* SqliteDB.transaction(
+  Effect.gen(function* () {
+    yield* Users.insert({ ... });
+    yield* Posts.insert({ ... });
+  })
+);
+```
+
+## Manual Transaction Control
+
+For advanced use cases, use manual transaction control:
+
+```typescript
+const program = Effect.gen(function* () {
+  const db = yield* SqliteDB;
+  
+  try {
+    // Begin transaction
+    yield* db.begin();
+    
+    // Operations
+    yield* Users.insert({ ... });
+    yield* Posts.insert({ ... });
+    
+    // Commit
+    yield* db.commit();
+  } catch (error) {
+    // Rollback on error
+    yield* db.rollback();
+    throw error;
+  }
+});
+```
+
+<Warning>
+  Manual transaction control is **not recommended**. Use `SqliteDB.transaction` instead.
+</Warning>
+
+## Broadcasting During Transactions
+
+By default, entity changes are broadcast immediately. During transactions, broadcasts are queued and sent only after commit:
+
+```typescript
+const program = yield* SqliteDB.transaction(
+  Effect.gen(function* () {
+    yield* Users.insert({ ... });  // Queued
+    yield* Users.insert({ ... });  // Queued
+    yield* Users.insert({ ... });  // Queued
+    
+    // All broadcasts sent after commit
+  })
+);
+```
+
+If the transaction fails, broadcasts are discarded:
+
+```typescript
+const program = yield* SqliteDB.transaction(
+  Effect.gen(function* () {
+    yield* Users.insert({ ... });  // Queued
+    yield* Users.insert({ ... });  // Queued
+    
+    // Transaction fails - broadcasts discarded
+    yield* Effect.fail(new Error("Failed"));
+  })
+).pipe(
+  Effect.catchAll(() => Effect.succeed(null))
+);
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep transactions short">
+    Long-running transactions can lock the database:
+
+    ```typescript
+    // ❌ Avoid: Long transaction
+    yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        yield* Users.insert({ ... });
+        yield* Effect.sleep("5 seconds");  // Bad!
+        yield* Posts.insert({ ... });
+      })
+    );
+
+    // ✅ Better: Separate operations
+    yield* Users.insert({ ... });
+    yield* Effect.sleep("5 seconds");
+    yield* Posts.insert({ ... });
+    ```
+  </Accordion>
+
+  <Accordion title="Don't nest transactions">
+    Flatten operations instead:
+
+    ```typescript
+    // ❌ Wrong
+    yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        yield* operation1();
+        yield* SqliteDB.transaction(operation2);  // Error!
+      })
+    );
+
+    // ✅ Correct
+    yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        yield* operation1();
+        yield* operation2();
+      })
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Handle errors explicitly">
+    Catch and handle transaction errors:
+
+    ```typescript
+    const result = yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        // Operations
+      })
+    ).pipe(
+      Effect.catchTag("SqliteDBError", (error) => {
+        console.error("Transaction failed:", error.error._tag);
+        return Effect.succeed(null);
+      })
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Use for data consistency">
+    Transactions ensure related data stays consistent:
+
+    ```typescript
+    // ✅ Good: User and profile created together
+    yield* SqliteDB.transaction(
+      Effect.gen(function* () {
+        const user = yield* Users.insert({ ... });
+        yield* Profiles.insert({ userId: user.value.userId, ... });
+      })
+    );
+
+    // ❌ Risky: Profile might fail, leaving orphaned user
+    const user = yield* Users.insert({ ... });
+    yield* Profiles.insert({ userId: user.value.userId, ... });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Complete Example
+
+```typescript
+import { SqliteDB } from "@std-toolkit/sqlite";
+import { Effect } from "effect";
+
+// Transfer funds between accounts
+const transferFunds = ({
+  fromAccount,
+  toAccount,
+  amount,
+}: {
+  fromAccount: string;
+  toAccount: string;
+  amount: number;
+}) =>
+  SqliteDB.transaction(
+    Effect.gen(function* () {
+      // Get source account
+      const from = yield* Accounts.get({ accountId: fromAccount });
+      if (!from) {
+        return yield* Effect.fail(new Error("Source account not found"));
+      }
+      
+      // Check balance
+      if (from.value.balance < amount) {
+        return yield* Effect.fail(new Error("Insufficient funds"));
+      }
+      
+      // Get destination account
+      const to = yield* Accounts.get({ accountId: toAccount });
+      if (!to) {
+        return yield* Effect.fail(new Error("Destination account not found"));
+      }
+      
+      // Deduct from source
+      const updatedFrom = yield* Accounts.update(
+        { accountId: fromAccount },
+        { balance: from.value.balance - amount }
+      );
+      
+      // Add to destination
+      const updatedTo = yield* Accounts.update(
+        { accountId: toAccount },
+        { balance: to.value.balance + amount }
+      );
+      
+      // Create transaction record
+      const transaction = yield* Transactions.insert({
+        fromAccount,
+        toAccount,
+        amount,
+        timestamp: new Date().toISOString(),
+      });
+      
+      return {
+        from: updatedFrom.value,
+        to: updatedTo.value,
+        transaction: transaction.value,
+      };
+    })
+  );
+
+// Usage
+const program = Effect.gen(function* () {
+  const result = yield* transferFunds({
+    fromAccount: "account-1",
+    toAccount: "account-2",
+    amount: 100,
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.gen(function* () {
+        console.error("Transfer failed:", error);
+        return null;
+      })
+    )
+  );
+  
+  if (result) {
+    console.log("Transfer successful:", result);
+  }
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Operations" icon="database" href="/std-toolkit/db-sqlite/operations">
+    Learn CRUD operations
+  </Card>
+  <Card title="Adapters" icon="plug" href="/std-toolkit/db-sqlite/adapters">
+    Configure database adapters
+  </Card>
+</CardGroup>

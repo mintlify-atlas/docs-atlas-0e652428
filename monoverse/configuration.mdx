@@ -1,0 +1,392 @@
+---
+title: Configuration
+description: Advanced configuration for managing multiple monorepos
+---
+
+Monoverse works **zero-config** out of the box with any monorepo. However, for advanced use cases like managing multiple monorepos together, you can create a `monoverse.json` configuration file.
+
+## When Do You Need Configuration?
+
+You only need a configuration file if you want to:
+
+- Manage multiple monorepos from a single location
+- Work with monorepos in different directories
+- Use glob patterns to discover multiple monorepos
+
+**For single monorepo projects, no configuration is needed.**
+
+## Configuration File
+
+Create a `monoverse.json` file in your project root:
+
+```json
+{
+  "projects": [".", "../other-monorepo", "./packages/*"]
+}
+}
+```
+
+## Schema
+
+<ParamField path="projects" type="string[]" required>
+  An array of project paths or glob patterns. Each entry can be:
+  - A relative path to a monorepo root (e.g., `.`, `../other-monorepo`)
+  - A glob pattern to match multiple monorepos (e.g., `./packages/*`)
+</ParamField>
+
+## Project Paths
+
+### Direct Paths
+
+Specify direct paths to monorepo roots:
+
+```json
+{
+  "projects": [
+    ".",
+    "../backend-monorepo",
+    "../frontend-monorepo"
+  ]
+}
+```
+
+Each path should point to a directory containing:
+- A `package.json` with workspace configuration
+- One or more workspaces
+
+### Glob Patterns
+
+Use glob patterns to automatically discover multiple monorepos:
+
+```json
+{
+  "projects": [
+    "./monorepos/*",
+    "./packages/*/",
+    "../team-repos/*"
+  ]
+}
+```
+
+Monoverse will:
+1. Expand the glob pattern
+2. Check each matched directory for a `package.json` with workspace configuration
+3. Include all valid monorepos found
+
+### Mixed Configuration
+
+Combine direct paths and glob patterns:
+
+```json
+{
+  "projects": [
+    ".",
+    "../other-monorepo",
+    "./packages/*",
+    "../team-repos/*"
+  ]
+}
+```
+
+## Examples
+
+### Single Monorepo (Default)
+
+No configuration needed. Just run commands:
+
+```bash
+monoverse ls
+```
+
+Monoverse automatically detects the monorepo root and workspaces.
+
+### Multiple Monorepos
+
+Manage multiple monorepos together:
+
+**Directory Structure**:
+```
+/workspace
+  /frontend-monorepo
+    package.json (with workspaces)
+    /apps
+    /packages
+  /backend-monorepo
+    package.json (with workspaces)
+    /services
+    /libs
+  monoverse.json
+```
+
+**monoverse.json**:
+```json
+{
+  "projects": [
+    "./frontend-monorepo",
+    "./backend-monorepo"
+  ]
+}
+```
+
+**Usage**:
+```bash
+cd /workspace
+monoverse ls
+# Lists workspaces from both frontend-monorepo and backend-monorepo
+
+monoverse lint
+# Checks all workspaces across both monorepos
+```
+
+### Dynamic Discovery
+
+Automatically discover all monorepos in a directory:
+
+**Directory Structure**:
+```
+/projects
+  /client-a-monorepo
+    package.json (with workspaces)
+  /client-b-monorepo
+    package.json (with workspaces)
+  /client-c-monorepo
+    package.json (with workspaces)
+  monoverse.json
+```
+
+**monoverse.json**:
+```json
+{
+  "projects": ["./client-*-monorepo"]
+}
+```
+
+This automatically includes all matching monorepos without listing them individually.
+
+### Parent Directory Management
+
+Manage monorepos in sibling directories:
+
+**Directory Structure**:
+```
+/workspace
+  /config
+    monoverse.json
+  /monorepo-1
+    package.json (with workspaces)
+  /monorepo-2
+    package.json (with workspaces)
+  /monorepo-3
+    package.json (with workspaces)
+```
+
+**monoverse.json**:
+```json
+{
+  "projects": ["../monorepo-*"]
+}
+```
+
+**Usage**:
+```bash
+cd /workspace/config
+monoverse ls
+# Lists workspaces from all three monorepos
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Find Configuration">
+    When you run a Monoverse command, it searches for `monoverse.json` starting from the current directory and moving up the directory tree.
+  </Step>
+
+  <Step title="Resolve Patterns">
+    For each entry in the `projects` array:
+    - If it's a direct path, checks if it contains a valid monorepo
+    - If it's a glob pattern, expands it and checks each matched directory
+  </Step>
+
+  <Step title="Discover Workspaces">
+    For each valid monorepo found:
+    - Reads the workspace configuration from package.json
+    - Discovers all workspaces within that monorepo
+  </Step>
+
+  <Step title="Aggregate Results">
+    Combines workspaces from all monorepos into a single view for analysis, linting, and fixing.
+  </Step>
+</Steps>
+
+## Configuration Location
+
+Place `monoverse.json` at the appropriate level:
+
+### Inside a Monorepo
+
+```
+/my-monorepo
+  package.json (with workspaces)
+  monoverse.json
+  /apps
+  /packages
+```
+
+Use this to reference external monorepos from within a monorepo:
+
+```json
+{
+  "projects": [".", "../shared-packages"]
+}
+```
+
+### Above Monorepos
+
+```
+/workspace
+  monoverse.json
+  /monorepo-1
+  /monorepo-2
+  /monorepo-3
+```
+
+Use this to manage multiple monorepos from a single location:
+
+```json
+{
+  "projects": ["./monorepo-*"]
+}
+```
+
+## Glob Pattern Reference
+
+### Supported Patterns
+
+- `*` - Matches any characters except `/`
+- `**` - Matches any characters including `/`
+- `?` - Matches a single character
+- `[abc]` - Matches any character in the set
+- `{a,b}` - Matches any of the alternatives
+
+### Examples
+
+```json
+{
+  "projects": [
+    "./monorepos/*",           // All direct children
+    "./packages/**/",          // All nested directories
+    "./client-?-monorepo",     // Single character wildcard
+    "./{frontend,backend}"     // Alternative matching
+  ]
+}
+```
+
+## Validation
+
+Monoverse validates the configuration file:
+
+- Must be valid JSON
+- Must contain a `projects` array
+- Each project path must be a string
+
+Invalid configuration will be ignored, and Monoverse will fall back to auto-detection from the current directory.
+
+## Best Practices
+
+### Use Relative Paths
+
+Always use relative paths in `monoverse.json` to make the configuration portable:
+
+```json
+{
+  "projects": [".", "../other-monorepo"]
+}
+```
+
+Avoid absolute paths:
+
+```json
+{
+  "projects": ["/Users/you/workspace/monorepo"]
+}
+```
+
+### Keep It Simple
+
+Start with direct paths, only use glob patterns when managing many similar monorepos:
+
+```json
+// Simple and explicit
+{
+  "projects": [".", "../backend", "../frontend"]
+}
+
+// Use globs for many similar projects
+{
+  "projects": ["./client-*-monorepo"]
+}
+```
+
+### Document Your Setup
+
+Add a README explaining your multi-monorepo setup:
+
+```markdown
+# Workspace Configuration
+
+This workspace manages multiple monorepos:
+- ./frontend-monorepo - React applications and shared UI components
+- ./backend-monorepo - Node.js services and shared libraries
+
+Run `monoverse ls` to see all workspaces.
+```
+
+## Troubleshooting
+
+### Configuration Not Found
+
+If Monoverse doesn't detect your configuration:
+
+1. Verify `monoverse.json` is valid JSON
+2. Check that it contains a `projects` array
+3. Run commands from the directory containing `monoverse.json` or a subdirectory
+
+### Projects Not Detected
+
+If projects aren't being detected:
+
+1. Verify paths are correct relative to the `monoverse.json` location
+2. Check that each project directory has a valid `package.json` with workspace configuration
+3. Ensure glob patterns match the intended directories
+
+### Duplicate Workspaces
+
+If you see duplicate workspaces, check for overlapping project paths:
+
+```json
+// This will cause duplicates:
+{
+  "projects": [".", "./packages/*"]
+}
+```
+
+Monoverse automatically deduplicates workspaces with the same path.
+
+## Related Commands
+
+All Monoverse commands work with configured multi-monorepo setups:
+
+<CardGroup cols={2}>
+  <Card title="ls" icon="list" href="/monoverse/commands/ls">
+    List workspaces across all configured monorepos
+  </Card>
+  <Card title="lint" icon="magnifying-glass" href="/monoverse/commands/lint">
+    Check for issues across all monorepos
+  </Card>
+  <Card title="fix" icon="wrench" href="/monoverse/commands/fix">
+    Fix issues across all monorepos
+  </Card>
+  <Card title="format" icon="paintbrush" href="/monoverse/commands/format">
+    Format package.json files across all monorepos
+  </Card>
+</CardGroup>

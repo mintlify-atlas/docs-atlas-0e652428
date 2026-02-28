@@ -1,0 +1,117 @@
+---
+title: Introduction
+description: A collection of TypeScript libraries for building robust applications with Effect
+---
+
+## Overview
+
+This monorepo contains a collection of open source TypeScript libraries designed to help you build production-ready applications with [Effect](https://effect.website). From zero-config monorepo management to evolving database schemas and React hooks, these tools provide practical solutions for common development challenges.
+
+## Packages
+
+<CardGroup cols={2}>
+  <Card
+    title="monoverse"
+    icon="cube"
+    href="/monoverse/overview"
+  >
+    Zero-config monorepo management tool. Auto-detects your package manager and discovers workspaces automatically.
+  </Card>
+  <Card
+    title="use-effect-ts"
+    icon="react"
+    href="/use-effect-ts/overview"
+  >
+    React hooks for Effect.TS. Integrate Effect's powerful concurrency and error handling into your React components.
+  </Card>
+  <Card
+    title="eschema"
+    icon="database"
+    href="/std-toolkit/eschema/overview"
+  >
+    Evolving schemas with built-in versioning and automatic migrations. Never break your data again.
+  </Card>
+  <Card
+    title="db-sqlite"
+    icon="table"
+    href="/std-toolkit/db-sqlite/overview"
+  >
+    SQLite adapter with single table design patterns. Supports better-sqlite3 and Cloudflare Durable Objects.
+  </Card>
+</CardGroup>
+
+## Key features
+
+<AccordionGroup>
+  <Accordion title="Zero-config monorepo management">
+    Monoverse works out of the box with any monorepo structure. It automatically detects your package manager (pnpm, yarn, npm, bun) and discovers all workspaces without requiring any configuration files.
+    
+    List workspaces, add dependencies, fix version mismatches, and format package.json files with simple commands that just work.
+  </Accordion>
+
+  <Accordion title="Evolving schemas with migrations">
+    Schema evolution is built into eschema from day one. Add new fields, transform existing ones, and migrate old data automatically as your application grows.
+    
+    Each version includes metadata tracking, and migrations run sequentially to ensure data consistency across schema changes.
+  </Accordion>
+
+  <Accordion title="SQLite single table design">
+    db-sqlite brings single table design patterns to SQLite with automatic metadata tracking, soft deletes, and compound indexes.
+    
+    Works with both better-sqlite3 for Node.js and Cloudflare Durable Objects, giving you flexibility in deployment.
+  </Accordion>
+
+  <Accordion title="React hooks for Effect.TS">
+    use-effect-ts bridges React and Effect, providing hooks like `useRunEffect`, `useRunEffectQueue`, and `useComponentScope` that handle Effect lifecycle management automatically.
+    
+    Run Effects from event handlers, manage component-scoped fiber sets, and integrate Effect's error handling into your React components.
+  </Accordion>
+</AccordionGroup>
+
+## Philosophy
+
+These packages share a common design philosophy:
+
+- **Effect-first**: Built on [Effect](https://effect.website) for type-safe error handling and composable effects
+- **Zero-config when possible**: Smart defaults that work out of the box
+- **Production-ready**: Battle-tested patterns for real applications
+- **Developer experience**: Clear APIs with comprehensive TypeScript support
+
+## Get started
+
+Each package can be used independently. Choose the one that solves your immediate need:
+
+<CardGroup cols={2}>
+  <Card
+    title="Managing a monorepo?"
+    icon="folder-tree"
+    href="/monoverse/installation"
+  >
+    Start with monoverse for dependency management and workspace linting
+  </Card>
+  <Card
+    title="Using Effect in React?"
+    icon="react"
+    href="/use-effect-ts/installation"
+  >
+    Start with use-effect-ts to run Effects from your components
+  </Card>
+  <Card
+    title="Need schema versioning?"
+    icon="code-branch"
+    href="/std-toolkit/eschema/getting-started"
+  >
+    Start with eschema for evolving schemas with automatic migrations
+  </Card>
+  <Card
+    title="Building with SQLite?"
+    icon="database"
+    href="/std-toolkit/db-sqlite/getting-started"
+  >
+    Start with db-sqlite for single table design patterns
+  </Card>
+</CardGroup>
+
+## License
+
+All packages are MIT licensed.

@@ -1,0 +1,83 @@
+---
+title: Installation
+description: Install Monoverse and get started with monorepo management
+---
+
+## Prerequisites
+
+[Bun](https://bun.sh) is required to run Monoverse.
+
+<Steps>
+  <Step title="Install Bun">
+    Install Bun on macOS, Linux, or WSL:
+
+    ```bash
+    curl -fsSL https://bun.sh/install | bash
+    ```
+
+    For other platforms and installation methods, see the [official Bun installation guide](https://bun.sh/docs/installation).
+  </Step>
+
+  <Step title="Install Monoverse">
+    Install Monoverse globally using your preferred package manager:
+
+    <CodeGroup>
+    ```bash npm
+    npm install -g monoverse
+    ```
+
+    ```bash yarn
+    yarn global add monoverse
+    ```
+
+    ```bash pnpm
+    pnpm add -g monoverse
+    ```
+
+    ```bash bun
+    bun add -g monoverse
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Verify Installation">
+    Verify that Monoverse is installed correctly by running:
+
+    ```bash
+    monoverse --version
+    ```
+
+    You should see the version number (e.g., `0.0.21`).
+  </Step>
+</Steps>
+
+## Getting Started
+
+Monoverse works out of the box with any monorepo. No configuration needed.
+
+```bash
+# Navigate to your monorepo
+cd /path/to/your/monorepo
+
+# List all workspaces
+monoverse ls
+```
+
+Monoverse auto-detects your package manager (pnpm, yarn, npm, bun) and discovers all workspaces automatically.
+
+## System Requirements
+
+- **Node.js**: Monoverse is built with Bun and requires it to run
+- **Operating System**: macOS, Linux, or WSL (Windows Subsystem for Linux)
+- **Package Manager**: Any of npm, yarn, pnpm, or bun
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="List Workspaces" icon="list" href="/monoverse/commands/ls">
+    Learn how to list all workspaces in your monorepo
+  </Card>
+  <Card title="Add Dependencies" icon="plus" href="/monoverse/commands/add">
+    Add dependencies to your workspaces
+  </Card>
+</CardGroup>
